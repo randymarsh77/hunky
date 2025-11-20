@@ -51,9 +51,9 @@ impl<'a> UI<'a> {
                     StreamMode::BufferedMore => "BUFFERED",
                 };
                 let speed_text = match self.app.speed() {
-                    StreamSpeed::RealTime => "Real-time",
-                    StreamSpeed::Slow => "Slow (5s)",
-                    StreamSpeed::VerySlow => "Very Slow (10s)",
+                    StreamSpeed::Fast => "Fast",
+                    StreamSpeed::Medium => "Medium",
+                    StreamSpeed::Slow => "Slow",
                 };
                 let view_mode_text = match self.app.view_mode() {
                     ViewMode::AllChanges => "All Changes",
@@ -67,9 +67,9 @@ impl<'a> UI<'a> {
                     StreamMode::BufferedMore => "BUFF",
                 };
                 let speed_text = match self.app.speed() {
-                    StreamSpeed::RealTime => "RT",
-                    StreamSpeed::Slow => "5s",
-                    StreamSpeed::VerySlow => "10s",
+                    StreamSpeed::Fast => "Fast",
+                    StreamSpeed::Medium => "Med",
+                    StreamSpeed::Slow => "Slow",
                 };
                 let view_mode_text = match self.app.view_mode() {
                     ViewMode::AllChanges => "All",
@@ -83,9 +83,9 @@ impl<'a> UI<'a> {
                     StreamMode::BufferedMore => "B",
                 };
                 let speed_text = match self.app.speed() {
-                    StreamSpeed::RealTime => "R",
+                    StreamSpeed::Fast => "F",
+                    StreamSpeed::Medium => "M",
                     StreamSpeed::Slow => "S",
-                    StreamSpeed::VerySlow => "V",
                 };
                 let view_mode_text = match self.app.view_mode() {
                     ViewMode::AllChanges => "All",
@@ -99,9 +99,9 @@ impl<'a> UI<'a> {
                     StreamMode::BufferedMore => "B",
                 };
                 let speed_text = match self.app.speed() {
-                    StreamSpeed::RealTime => "R",
+                    StreamSpeed::Fast => "F",
+                    StreamSpeed::Medium => "M",
                     StreamSpeed::Slow => "S",
-                    StreamSpeed::VerySlow => "V",
                 };
                 let view_mode_text = match self.app.view_mode() {
                     ViewMode::AllChanges => "A",
@@ -424,15 +424,13 @@ impl<'a> UI<'a> {
             Line::from("J/K: Scroll/Nav"),
             Line::from("N/P: File"),
             Line::from("V: View"),
+            Line::from("M: Mode"),
             Line::from("W: Wrap"),
             Line::from("H: Hide Help"),
             Line::from("C: Clear"),
             Line::from("F: Names"),
             Line::from("S: Speed"),
             Line::from("R: Refresh"),
-            Line::from(""),
-            Line::from("Enter/Esc:"),
-            Line::from("  Toggle Mode"),
         ];
         
         let help = Paragraph::new(help_lines)

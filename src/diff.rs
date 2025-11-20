@@ -30,6 +30,24 @@ impl Hunk {
         self.lines.join("")
     }
     
+    pub fn count_changes(&self) -> usize {
+        let mut add_lines = 0;
+        let mut remove_lines = 0;
+        
+        for line in &self.lines {
+            if line.starts_with('+') && !line.starts_with("+++") {
+                add_lines += 1;
+            } else if line.starts_with('-') && !line.starts_with("---") {
+                remove_lines += 1;
+            }
+        }
+        
+        // Count pairs of add/remove as 1 change, plus any unpaired lines
+        let pairs = add_lines.min(remove_lines);
+        let unpaired = (add_lines + remove_lines) - (2 * pairs);
+        pairs + unpaired
+    }
+    
     pub fn new(old_start: usize, new_start: usize, lines: Vec<String>, file_path: &PathBuf) -> Self {
         let id = HunkId::new(file_path, old_start, new_start, &lines);
         Self {

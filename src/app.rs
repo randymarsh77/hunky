@@ -42,9 +42,9 @@ pub enum StreamMode {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum StreamSpeed {
-    RealTime,
-    Slow,        // 1 hunk per 5 seconds
-    VerySlow,    // 1 hunk per 10 seconds
+    Fast,    // 1x multiplier: 0.3s base + 0.2s per change
+    Medium,  // 2x multiplier: 0.5s base + 0.5s per change
+    Slow,    // 3x multiplier: 0.5s base + 1.0s per change
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -54,12 +54,14 @@ pub enum FocusPane {
 }
 
 impl StreamSpeed {
-    pub fn duration(&self) -> Duration {
-        match self {
-            StreamSpeed::RealTime => Duration::from_millis(100),
-            StreamSpeed::Slow => Duration::from_secs(5),
-            StreamSpeed::VerySlow => Duration::from_secs(10),
-        }
+    pub fn duration_for_hunk(&self, change_count: usize) -> Duration {
+        let (base_ms, per_change_ms) = match self {
+            StreamSpeed::Fast => (300, 200),     // 0.3s base + 0.2s per change
+            StreamSpeed::Medium => (500, 500),   // 0.5s base + 0.5s per change
+            StreamSpeed::Slow => (500, 1000),    // 0.5s base + 1.0s per change
+        };
+        let total_ms = base_ms + (per_change_ms * change_count as u64);
+        Duration::from_millis(total_ms)
     }
 }
 
@@ -113,7 +115,7 @@ impl App {
             current_hunk_index: 0,
             view_mode: ViewMode::NewChangesOnly,
             mode: StreamMode::AutoStream,
-            speed: StreamSpeed::RealTime,
+            speed: StreamSpeed::Fast,
             seen_tracker,
             show_filenames_only: false,
             wrap_lines: false,
@@ -191,7 +193,12 @@ impl App {
             // Auto-advance in AutoStream mode
             if self.mode == StreamMode::AutoStream {
                 let elapsed = self.last_auto_advance.elapsed();
-                if elapsed >= self.speed.duration() {
+                // Get current hunk change count (not including context lines) for duration calculation
+                let change_count = self.current_file()
+                    .and_then(|f| f.hunks.get(self.current_hunk_index))
+                    .map(|h| h.count_changes())
+                    .unwrap_or(1); // Default to 1 change if no hunk
+                if elapsed >= self.speed.duration_for_hunk(change_count) {
                     self.advance_hunk();
                     self.last_auto_advance = Instant::now();
                 }
@@ -213,16 +220,8 @@ impl App {
                             // Shift+Space goes to previous hunk
                             self.previous_hunk();
                         }
-                        KeyCode::Enter => {
+                        KeyCode::Char('m') => {
                             // Toggle between AutoStream and BufferedMore
-                            self.mode = match self.mode {
-                                StreamMode::AutoStream => StreamMode::BufferedMore,
-                                StreamMode::BufferedMore => StreamMode::AutoStream,
-                            };
-                            self.last_auto_advance = Instant::now();
-                        }
-                        KeyCode::Esc => {
-                            // Also toggle mode
                             self.mode = match self.mode {
                                 StreamMode::AutoStream => StreamMode::BufferedMore,
                                 StreamMode::BufferedMore => StreamMode::AutoStream,
@@ -281,9 +280,9 @@ impl App {
                         KeyCode::Char('s') => {
                             // Cycle through speeds
                             self.speed = match self.speed {
-                                StreamSpeed::RealTime => StreamSpeed::Slow,
-                                StreamSpeed::Slow => StreamSpeed::VerySlow,
-                                StreamSpeed::VerySlow => StreamSpeed::RealTime,
+                                StreamSpeed::Fast => StreamSpeed::Medium,
+                                StreamSpeed::Medium => StreamSpeed::Slow,
+                                StreamSpeed::Slow => StreamSpeed::Fast,
                             };
                         }
                         KeyCode::Char('v') => {
