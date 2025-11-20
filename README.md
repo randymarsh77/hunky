@@ -14,6 +14,8 @@ A Terminal UI (TUI) application for observing git changes in real-time, built wi
 
 **Status**: ✨ Working and demonstrating real-time change detection!
 
+**[📖 Quick Start Guide](QUICKSTART.md)** | Get up and running in minutes!
+
 ## Overview
 
 Hunky helps you observe file changes in a git repository as they happen, making it perfect for working alongside coding agents or watching automated processes modify your codebase.
@@ -22,13 +24,20 @@ Hunky helps you observe file changes in a git repository as they happen, making 
 
 - 📸 **Snapshot Tracking**: Captures the current state of `git diff` or `git status`
 - 👁️ **Real-time Watching**: File system watcher detects changes to git-tracked files
-- 📊 **Stream Display**: Shows changes as a stream with customizable speed
-- 🎨 **Syntax Highlighting**: Language detection and syntax highlighting for diff hunks
+- 🎯 **Smart Hunk Tracking**: Intelligent "seen" tracking - only shows new changes you haven't viewed
+- 📊 **Stream Display**: Shows one hunk at a time with context lines and colored backgrounds
+- 🎨 **Enhanced Diff Display**: Colored backgrounds for additions/deletions, context lines, file headers
 - 🎮 **Interactive Modes**:
-  - **Auto-Stream Mode**: Automatically advances through hunks at configurable speeds
-  - **Buffered Mode**: Manual "more"-like navigation with space bar
-- 🗂️ **File Grouping**: Changes are grouped by file with easy navigation
-- ⚡ **Speed Control**: Real-time, slow (5s), or very slow (10s) hunk display
+  - **Auto-Stream Mode**: Automatically advances through hunks at dynamic speeds
+  - **Buffered Mode**: Manual navigation with Space (next) and Shift+Space (previous)
+- 👀 **View Modes**:
+  - **New Changes Only**: Stream only unseen hunks (perfect for AI agent monitoring)
+  - **All Changes**: Review all current changes
+- 🗂️ **File Grouping**: Changes are grouped by file with unseen/total counts
+- ⚡ **Dynamic Speed Control**: Fast/Medium/Slow - timing adapts to hunk size
+- 🔍 **Focus Navigation**: Tab to switch between file list and diff view
+- 💪 **Line Wrapping**: Toggle with 'W' key for long lines
+- ℹ️ **Help Sidebar**: Built-in help with 'H' key
 
 ## Installation
 
@@ -67,7 +76,13 @@ Navigate to a git repository and run:
 hunky
 # or during development:
 cargo run
+
+# Specify a different repository:
+hunky --repo /path/to/repo
+cargo run -- --repo /path/to/repo
 ```
+
+**See the [Quick Start Guide](QUICKSTART.md) for detailed instructions and tips!**
 
 ### Key Bindings
 
@@ -75,16 +90,20 @@ cargo run
 |-----|--------|
 | `q` or `Q` | Quit the application |
 | `Ctrl+C` | Quit the application |
-| `Enter` or `Esc` | Toggle between Auto-Stream and Buffered modes |
-| `Space` | Advance to next hunk (in any mode) |
-| `j` or `↓` | Scroll diff view down |
-| `k` or `↑` | Scroll diff view up |
-| `v` | Toggle between "All Changes" and "New Changes Only" view modes |
-| `c` | Clear all seen hunks (reset tracking) |
+| `Tab` | Toggle focus between file list and diff view |
+| `Space` | Advance to next hunk |
+| `Shift+Space` | Go back to previous hunk |
+| `j` or `↓` | Scroll down (diff view) or navigate files (file list, when focused) |
+| `k` or `↑` | Scroll up (diff view) or navigate files (file list, when focused) |
 | `n` | Next file |
 | `p` | Previous file |
+| `m` | Toggle between Auto-Stream and Buffered modes |
+| `v` | Toggle between "All Changes" and "New Changes Only" view modes |
+| `s` | Cycle through stream speeds (Fast → Medium → Slow) |
+| `w` | Toggle line wrapping |
+| `h` | Toggle help sidebar |
+| `c` | Clear all seen hunks (reset tracking) |
 | `f` | Toggle between showing all hunks vs. file names only |
-| `s` | Cycle through stream speeds (Real-time → Slow → Very Slow) |
 | `r` | Refresh - capture a new snapshot of git changes |
 
 ### View Modes
@@ -100,15 +119,21 @@ cargo run
 
 ### Stream Modes
 
-**Auto-Stream Mode**: Changes appear automatically at the selected speed. Perfect for watching an AI agent work.
+**Auto-Stream Mode**: Changes appear automatically at the selected speed with dynamic timing based on hunk size. Perfect for watching an AI agent work.
 
-**Buffered Mode**: Manual control with space bar to advance. Like the classic `more` pager.
+**Buffered Mode**: Manual control with Space to advance, Shift+Space to go back. Like the classic `more` pager.
+
+Toggle with the **M** key.
 
 ### Stream Speeds
 
-- **Real-time**: Hunks appear as fast as possible (~100ms delay)
-- **Slow**: 1 hunk every 5 seconds
-- **Very Slow**: 1 hunk every 10 seconds
+- **Fast**: 0.3s base + 0.2s per change line (snappy for quick reviews)
+- **Medium**: 0.5s base + 0.5s per change line (comfortable pace)
+- **Slow**: 0.5s base + 1.0s per change line (relaxed for careful reading)
+
+Timing automatically scales with the size of each hunk - larger changes get more time!
+
+Cycle with the **S** key.
 
 ## Project Structure
 

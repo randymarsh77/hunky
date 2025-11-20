@@ -1,8 +1,11 @@
+# Rust
 /target
-test*.rs
-test*.py
 
+# Testing
 test-repo/
+
+# Logs
 *debug.log
 
+# Nix
 .direnv/
