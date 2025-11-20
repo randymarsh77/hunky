@@ -80,34 +80,72 @@ impl GitRepo {
         
         let diff = repo.diff_index_to_workdir(None, Some(&mut diff_opts))?;
         
-        let mut hunks = Vec::new();
         let path_buf = path.to_path_buf();
         
-        diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
-            let content = String::from_utf8_lossy(line.content()).to_string();
-            let line_type = match line.origin() {
-                '+' => "addition",
-                '-' => "deletion",
-                ' ' => "context",
-                _ => "other",
-            };
-            
-            // Group consecutive lines into hunks
-            if hunks.is_empty() || line_type != "context" {
-                let lines = vec![format!("{}{}", line.origin(), content)];
-                let old_start = line.old_lineno().unwrap_or(0) as usize;
-                let new_start = line.new_lineno().unwrap_or(0) as usize;
-                hunks.push(Hunk::new(old_start, new_start, lines, &path_buf));
-            } else {
-                if let Some(last_hunk) = hunks.last_mut() {
-                    last_hunk.lines.push(format!("{}{}", line.origin(), content));
-                }
-            }
-            
-            true
-        })?;
+        use std::cell::RefCell;
+        use std::rc::Rc;
         
-        Ok(hunks)
+        let hunks = Rc::new(RefCell::new(Vec::new()));
+        let current_hunk_lines = Rc::new(RefCell::new(Vec::new()));
+        let current_old_start = Rc::new(RefCell::new(0usize));
+        let current_new_start = Rc::new(RefCell::new(0usize));
+        let in_hunk = Rc::new(RefCell::new(false));
+        
+        let hunks_clone = hunks.clone();
+        let lines_clone = current_hunk_lines.clone();
+        let old_clone = current_old_start.clone();
+        let new_clone = current_new_start.clone();
+        let in_hunk_clone = in_hunk.clone();
+        let path_clone = path_buf.clone();
+        
+        let hunks_clone2 = hunks.clone();
+        let lines_clone2 = current_hunk_lines.clone();
+        let in_hunk_clone2 = in_hunk.clone();
+        
+        diff.foreach(
+            &mut |_, _| true,
+            None,
+            Some(&mut move |_, hunk| {
+                // Save previous hunk if exists
+                if *in_hunk_clone.borrow() && !lines_clone.borrow().is_empty() {
+                    hunks_clone.borrow_mut().push(Hunk::new(
+                        *old_clone.borrow(),
+                        *new_clone.borrow(),
+                        lines_clone.borrow().clone(),
+                        &path_clone
+                    ));
+                    lines_clone.borrow_mut().clear();
+                }
+                
+                // Start new hunk
+                *old_clone.borrow_mut() = hunk.old_start() as usize;
+                *new_clone.borrow_mut() = hunk.new_start() as usize;
+                *in_hunk_clone.borrow_mut() = true;
+                true
+            }),
+            Some(&mut move |_, _, line| {
+                // Add line to current hunk
+                if *in_hunk_clone2.borrow() {
+                    let content = String::from_utf8_lossy(line.content()).to_string();
+                    lines_clone2.borrow_mut().push(format!("{}{}", line.origin(), content));
+                }
+                true
+            }),
+        )?;
+        
+        // Don't forget the last hunk
+        if *in_hunk.borrow() && !current_hunk_lines.borrow().is_empty() {
+            hunks.borrow_mut().push(Hunk::new(
+                *current_old_start.borrow(),
+                *current_new_start.borrow(),
+                current_hunk_lines.borrow().clone(),
+                &path_buf
+            ));
+        }
+        
+        // Extract the hunks - clone to avoid lifetime issues
+        let result = hunks.borrow().clone();
+        Ok(result)
     }
     
     pub fn get_status(&self) -> Result<String> {

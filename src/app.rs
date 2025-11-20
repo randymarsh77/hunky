@@ -68,6 +68,9 @@ pub struct App {
     speed: StreamSpeed,
     seen_tracker: SeenTracker,
     show_filenames_only: bool,
+    wrap_lines: bool,
+    compact_mode: bool,
+    show_help: bool,
     snapshot_receiver: mpsc::UnboundedReceiver<DiffSnapshot>,
     last_auto_advance: Instant,
     scroll_offset: u16,
@@ -106,6 +109,9 @@ impl App {
             speed: StreamSpeed::RealTime,
             seen_tracker,
             show_filenames_only: false,
+            wrap_lines: false,
+            compact_mode: true,
+            show_help: false,
             snapshot_receiver: rx,
             last_auto_advance: Instant::now(),
             scroll_offset: 0,
@@ -252,6 +258,14 @@ impl App {
                                 ViewMode::NewChangesOnly => ViewMode::AllChanges,
                             };
                             self.reached_end = false;
+                        }
+                        KeyCode::Char('w') => {
+                            // Toggle line wrapping
+                            self.wrap_lines = !self.wrap_lines;
+                        }
+                        KeyCode::Char('h') | KeyCode::Char('H') => {
+                            // Toggle help display
+                            self.show_help = !self.show_help;
                         }
                         KeyCode::Char('c') => {
                             // Clear seen hunks
@@ -451,6 +465,18 @@ impl App {
     
     pub fn show_filenames_only(&self) -> bool {
         self.show_filenames_only
+    }
+    
+    pub fn wrap_lines(&self) -> bool {
+        self.wrap_lines
+    }
+    
+    pub fn compact_mode(&self) -> bool {
+        self.compact_mode
+    }
+    
+    pub fn show_help(&self) -> bool {
+        self.show_help
     }
     
     pub fn unseen_hunk_count(&self) -> usize {

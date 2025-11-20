@@ -23,18 +23,17 @@ impl<'a> UI<'a> {
     }
     
     pub fn draw(&self, frame: &mut Frame) {
+        // Always use compact layout (no footer)
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),  // Header
+                Constraint::Length(3),   // Header
                 Constraint::Min(0),      // Main content
-                Constraint::Length(3),  // Footer with help
             ])
             .split(frame.area());
         
         self.draw_header(frame, chunks[0]);
         self.draw_main_content(frame, chunks[1]);
-        self.draw_footer(frame, chunks[2]);
     }
     
     fn draw_header(&self, frame: &mut Frame, area: Rect) {
@@ -56,7 +55,7 @@ impl<'a> UI<'a> {
         
         let unseen_count = self.app.unseen_hunk_count();
         
-        let title = Line::from(vec![
+        let title = vec![
             Span::styled("Git Stream", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Span::raw(" | "),
             Span::styled(view_mode_text, Style::default().fg(Color::Magenta)),
@@ -66,25 +65,58 @@ impl<'a> UI<'a> {
             Span::styled(speed_text, Style::default().fg(Color::Green)),
             Span::raw(" | Unseen: "),
             Span::styled(format!("{}", unseen_count), Style::default().fg(Color::LightBlue)),
-        ]);
+        ];
         
-        let header = Paragraph::new(title)
-            .block(Block::default().borders(Borders::ALL));
-        
-        frame.render_widget(header, area);
-    }
-    
-    fn draw_main_content(&self, frame: &mut Frame, area: Rect) {
-        let chunks = Layout::default()
+        // Create header with help hint on the right
+        let header_layout = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Percentage(25),  // File list
-                Constraint::Percentage(75),  // Diff content
+                Constraint::Min(0),      // Main title (left)
+                Constraint::Length(10),  // Help hint (right)
             ])
             .split(area);
         
-        self.draw_file_list(frame, chunks[0]);
-        self.draw_diff_content(frame, chunks[1]);
+        let header_left = Paragraph::new(Line::from(title))
+            .block(Block::default().borders(Borders::ALL));
+        
+        let help_hint = Paragraph::new("H: Help")
+            .block(Block::default().borders(Borders::ALL))
+            .style(Style::default().fg(Color::Gray))
+            .alignment(ratatui::layout::Alignment::Right);
+        
+        frame.render_widget(header_left, header_layout[0]);
+        frame.render_widget(help_hint, header_layout[1]);
+    }
+    
+    fn draw_main_content(&self, frame: &mut Frame, area: Rect) {
+        // Check if help sidebar should be shown
+        if self.app.show_help() {
+            // Split into 3 columns: file list, diff, help
+            let chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(25),  // File list
+                    Constraint::Min(0),          // Diff content (takes remaining space)
+                    Constraint::Length(20),      // Help sidebar
+                ])
+                .split(area);
+            
+            self.draw_file_list(frame, chunks[0]);
+            self.draw_diff_content(frame, chunks[1]);
+            self.draw_help_sidebar(frame, chunks[2]);
+        } else {
+            // No help shown, just file list and diff
+            let chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(25),  // File list
+                    Constraint::Percentage(75),  // Diff content
+                ])
+                .split(area);
+            
+            self.draw_file_list(frame, chunks[0]);
+            self.draw_diff_content(frame, chunks[1]);
+        }
     }
     
     fn draw_file_list(&self, frame: &mut Frame, area: Rect) {
@@ -200,18 +232,70 @@ impl<'a> UI<'a> {
         };
         
         lines.push(Line::from(Span::styled(hunk_header, header_style)));
+        lines.push(Line::from("")); // Empty line for spacing
         
-        // Add hunk lines with coloring
+        // Separate lines into context before, changes, and context after
+        let mut context_before = Vec::new();
+        let mut changes = Vec::new();
+        let mut context_after = Vec::new();
+        
+        let mut in_changes = false;
+        let mut changes_ended = false;
+        
         for line in &hunk.lines {
-            let style = if line.starts_with('+') {
-                Style::default().fg(Color::Green)
-            } else if line.starts_with('-') {
-                Style::default().fg(Color::Red)
+            if line.starts_with('+') || line.starts_with('-') {
+                in_changes = true;
+                changes_ended = false;
+                changes.push(line.clone());
+            } else if !in_changes {
+                context_before.push(line.clone());
             } else {
-                Style::default().fg(Color::White)
-            };
-            
-            lines.push(Line::from(Span::styled(line.clone(), style)));
+                changes_ended = true;
+                context_after.push(line.clone());
+            }
+        }
+        
+        // Show up to 5 lines of context before
+        let context_before_start = if context_before.len() > 5 {
+            context_before.len() - 5
+        } else {
+            0
+        };
+        
+        for line in &context_before[context_before_start..] {
+            let content = line.strip_prefix(' ').unwrap_or(line);
+            lines.push(Line::from(Span::styled(
+                format!("  {}", content),
+                Style::default().fg(Color::DarkGray)
+            )));
+        }
+        
+        // Show changes with background colors for better visibility
+        for line in &changes {
+            if line.starts_with('+') {
+                let content = line.strip_prefix('+').unwrap_or(line);
+                lines.push(Line::from(Span::styled(
+                    format!("+ {}", content),
+                    Style::default().fg(Color::Green).bg(Color::Rgb(0, 40, 0)) // Subtle green background
+                )));
+            } else if line.starts_with('-') {
+                let content = line.strip_prefix('-').unwrap_or(line);
+                lines.push(Line::from(Span::styled(
+                    format!("- {}", content),
+                    Style::default().fg(Color::Red).bg(Color::Rgb(40, 0, 0)) // Subtle red background
+                )));
+            }
+        }
+        
+        // Show up to 5 lines of context after
+        let context_after_end = context_after.len().min(5);
+        
+        for line in &context_after[..context_after_end] {
+            let content = line.strip_prefix(' ').unwrap_or(line);
+            lines.push(Line::from(Span::styled(
+                format!("  {}", content),
+                Style::default().fg(Color::DarkGray)
+            )));
         }
         
         let text = Text::from(lines);
@@ -222,7 +306,7 @@ impl<'a> UI<'a> {
             ""
         };
         
-        let paragraph = Paragraph::new(text)
+        let mut paragraph = Paragraph::new(text)
             .block(Block::default().borders(Borders::ALL).title(format!(
                 "{} (Hunk {}/{}{})",
                 file.path.to_string_lossy(),
@@ -230,30 +314,38 @@ impl<'a> UI<'a> {
                 file.hunks.len(),
                 title_suffix
             )))
-            .scroll((self.app.scroll_offset(), 0))
-            .wrap(Wrap { trim: false });
+            .scroll((self.app.scroll_offset(), 0));
+        
+        // Apply wrapping if enabled
+        if self.app.wrap_lines() {
+            paragraph = paragraph.wrap(Wrap { trim: false });
+        }
         
         frame.render_widget(paragraph, area);
     }
     
-    fn draw_footer(&self, frame: &mut Frame, area: Rect) {
-        let help_text = vec![
-            Span::raw("Q: Quit | "),
-            Span::raw("Enter/Esc: Toggle Mode | "),
-            Span::raw("Space: Next | "),
-            Span::raw("J/K/↑/↓: Scroll | "),
-            Span::raw("N/P: File | "),
-            Span::raw("V: View | "),
-            Span::raw("C: Clear | "),
-            Span::raw("F: Names | "),
-            Span::raw("S: Speed | "),
-            Span::raw("R: Refresh"),
+    fn draw_help_sidebar(&self, frame: &mut Frame, area: Rect) {
+        let help_lines = vec![
+            Line::from("Q: Quit"),
+            Line::from("Space: Next"),
+            Line::from("J/K: Scroll"),
+            Line::from("N/P: File"),
+            Line::from("V: View"),
+            Line::from("W: Wrap"),
+            Line::from("H: Hide Help"),
+            Line::from("C: Clear"),
+            Line::from("F: Names"),
+            Line::from("S: Speed"),
+            Line::from("R: Refresh"),
+            Line::from(""),
+            Line::from("Enter/Esc:"),
+            Line::from("  Toggle Mode"),
         ];
         
-        let footer = Paragraph::new(Line::from(help_text))
-            .block(Block::default().borders(Borders::ALL).title("Help"))
+        let help = Paragraph::new(help_lines)
+            .block(Block::default().borders(Borders::ALL).title("Keys"))
             .style(Style::default().fg(Color::Gray));
         
-        frame.render_widget(footer, area);
+        frame.render_widget(help, area);
     }
 }
