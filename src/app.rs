@@ -79,6 +79,7 @@ pub struct App {
     wrap_lines: bool,
     compact_mode: bool,
     show_help: bool,
+    syntax_highlighting: bool,
     focus: FocusPane,
     snapshot_receiver: mpsc::UnboundedReceiver<DiffSnapshot>,
     last_auto_advance: Instant,
@@ -121,6 +122,7 @@ impl App {
             wrap_lines: false,
             compact_mode: true,
             show_help: false,
+            syntax_highlighting: true,  // Enabled by default
             focus: FocusPane::HunkView,
             snapshot_receiver: rx,
             last_auto_advance: Instant::now(),
@@ -296,6 +298,10 @@ impl App {
                         KeyCode::Char('w') => {
                             // Toggle line wrapping
                             self.wrap_lines = !self.wrap_lines;
+                        }
+                        KeyCode::Char('y') => {
+                            // Toggle syntax highlighting
+                            self.syntax_highlighting = !self.syntax_highlighting;
                         }
                         KeyCode::Char('h') | KeyCode::Char('H') => {
                             // Toggle help display
@@ -545,6 +551,10 @@ impl App {
     
     pub fn show_help(&self) -> bool {
         self.show_help
+    }
+    
+    pub fn syntax_highlighting(&self) -> bool {
+        self.syntax_highlighting
     }
     
     pub fn unseen_hunk_count(&self) -> usize {

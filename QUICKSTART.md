@@ -14,8 +14,7 @@ In a separate terminal:
 ### 2. Build and Run
 
 ```bash
-# In the hunky directory
-cargo run
+cargo run -- --repo test-repo
 ```
 
 The TUI will launch in your terminal showing:
@@ -24,8 +23,8 @@ The TUI will launch in your terminal showing:
 - **Main panel**: Diff hunks for the currently selected file
 - **Help sidebar**: Keyboard shortcuts (toggle with 'H')
 
-Resume the simulation.
-This will make several file changes that Hunky will detect and display automatically!
+Resume the simulation in the separate terminal.
+The simulation will continuously make several file changes that Hunky will detect and display automatically!
 
 ### 3. Manual Testing
 

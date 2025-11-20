@@ -9,6 +9,22 @@ use ratatui::{
 use crate::app::{App, FocusPane, StreamMode, StreamSpeed, ViewMode};
 use crate::syntax::SyntaxHighlighter;
 
+/// Fade a color by reducing its brightness (for context lines)
+fn fade_color(color: Color) -> Color {
+    match color {
+        Color::Rgb(r, g, b) => {
+            // Reduce brightness by about 60%
+            let factor = 0.4;
+            Color::Rgb(
+                (r as f32 * factor) as u8,
+                (g as f32 * factor) as u8,
+                (b as f32 * factor) as u8,
+            )
+        }
+        _ => Color::DarkGray,
+    }
+}
+
 pub struct UI<'a> {
     app: &'a App,
     highlighter: SyntaxHighlighter,
@@ -333,6 +349,13 @@ impl<'a> UI<'a> {
             }
         }
         
+        // Create syntax highlighter for this file if enabled
+        let mut file_highlighter = if self.app.syntax_highlighting() {
+            Some(self.highlighter.create_highlighter(&file.path))
+        } else {
+            None
+        };
+        
         // Show up to 5 lines of context before
         let context_before_start = if context_before.len() > 5 {
             context_before.len() - 5
@@ -342,26 +365,60 @@ impl<'a> UI<'a> {
         
         for line in &context_before[context_before_start..] {
             let content = line.strip_prefix(' ').unwrap_or(line);
-            lines.push(Line::from(Span::styled(
-                format!("  {}", content),
-                Style::default().fg(Color::DarkGray)
-            )));
+            if let Some(ref mut highlighter) = file_highlighter {
+                // Apply syntax highlighting with faded colors
+                let highlighted = highlighter.highlight_line(content);
+                let mut spans = vec![Span::raw("  ")];
+                for (color, text) in highlighted {
+                    // Make syntax colors darker/faded for context
+                    let faded_color = fade_color(color);
+                    spans.push(Span::styled(text, Style::default().fg(faded_color)));
+                }
+                lines.push(Line::from(spans));
+            } else {
+                lines.push(Line::from(Span::styled(
+                    format!("  {}", content),
+                    Style::default().fg(Color::DarkGray)
+                )));
+            }
         }
         
         // Show changes with background colors for better visibility
         for line in &changes {
             if line.starts_with('+') {
                 let content = line.strip_prefix('+').unwrap_or(line);
-                lines.push(Line::from(Span::styled(
-                    format!("+ {}", content),
-                    Style::default().fg(Color::Green).bg(Color::Rgb(0, 40, 0)) // Subtle green background
-                )));
+                if let Some(ref mut highlighter) = file_highlighter {
+                    // Apply syntax highlighting
+                    let highlighted = highlighter.highlight_line(content);
+                    let mut spans = vec![Span::styled("+ ", Style::default().fg(Color::Green).bg(Color::Rgb(0, 40, 0)))];
+                    for (color, text) in highlighted {
+                        // Blend syntax color with green background
+                        spans.push(Span::styled(text, Style::default().fg(color).bg(Color::Rgb(0, 40, 0))));
+                    }
+                    lines.push(Line::from(spans));
+                } else {
+                    lines.push(Line::from(Span::styled(
+                        format!("+ {}", content),
+                        Style::default().fg(Color::Green).bg(Color::Rgb(0, 40, 0))
+                    )));
+                }
             } else if line.starts_with('-') {
                 let content = line.strip_prefix('-').unwrap_or(line);
-                lines.push(Line::from(Span::styled(
-                    format!("- {}", content),
-                    Style::default().fg(Color::Red).bg(Color::Rgb(40, 0, 0)) // Subtle red background
-                )));
+                if let Some(ref mut highlighter) = file_highlighter {
+                    // Apply syntax highlighting
+                    let highlighted = highlighter.highlight_line(content);
+                    let mut spans = vec![Span::styled("- ", Style::default().fg(Color::Red).bg(Color::Rgb(40, 0, 0)))];
+                    for (color, text) in highlighted {
+                        // Blend syntax color with red background
+                        spans.push(Span::styled(text, Style::default().fg(color).bg(Color::Rgb(40, 0, 0))));
+                    }
+                    lines.push(Line::from(spans));
+                } else {
+                    lines.push(Line::from(Span::styled(
+                        format!("- {}", content),
+                        Style::default().fg(Color::Red).bg(Color::Rgb(40, 0, 0))
+                    )));
+                }
             }
         }
         
@@ -370,10 +427,22 @@ impl<'a> UI<'a> {
         
         for line in &context_after[..context_after_end] {
             let content = line.strip_prefix(' ').unwrap_or(line);
-            lines.push(Line::from(Span::styled(
-                format!("  {}", content),
-                Style::default().fg(Color::DarkGray)
-            )));
+            if let Some(ref mut highlighter) = file_highlighter {
+                // Apply syntax highlighting with faded colors
+                let highlighted = highlighter.highlight_line(content);
+                let mut spans = vec![Span::raw("  ")];
+                for (color, text) in highlighted {
+                    // Make syntax colors darker/faded for context
+                    let faded_color = fade_color(color);
+                    spans.push(Span::styled(text, Style::default().fg(faded_color)));
+                }
+                lines.push(Line::from(spans));
+            } else {
+                lines.push(Line::from(Span::styled(
+                    format!("  {}", content),
+                    Style::default().fg(Color::DarkGray)
+                )));
+            }
         }
         
         let text = Text::from(lines);
@@ -426,6 +495,7 @@ impl<'a> UI<'a> {
             Line::from("V: View"),
             Line::from("M: Mode"),
             Line::from("W: Wrap"),
+            Line::from("Y: Syntax"),
             Line::from("H: Hide Help"),
             Line::from("C: Clear"),
             Line::from("F: Names"),
