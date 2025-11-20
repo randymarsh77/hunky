@@ -2,7 +2,7 @@
 
 ## Overview
 
-Git Stream now includes intelligent "seen" tracking for hunks, allowing you to stream only **new changes** as they appear, without repeatedly showing hunks you've already viewed.
+Hunky now includes intelligent "seen" tracking for hunks, allowing you to stream only **new changes** as they appear, without repeatedly showing hunks you've already viewed.
 
 ## How It Works
 
@@ -52,7 +52,7 @@ app.rs (0/10)      ← All 10 hunks have been seen
 
 ### Typical Workflow
 
-1. Start Git Stream in "New Changes Only" mode
+1. Start Hunky in "New Changes Only" mode
 2. Watch as an AI agent makes changes
 3. Hunks appear as they're created
 4. Once viewed, they disappear from the stream
@@ -125,11 +125,11 @@ This means:
 ## Example Session
 
 ```bash
-# Start Git Stream
+# Start Hunky
 cargo run
 
 # Header shows:
-# Git Stream | New Only | AUTO-STREAM | Real-time | Unseen: 15
+# Hunky | New Only | AUTO-STREAM | Real-time | Unseen: 15
 
 # Watch as changes flow in...
 # File list updates: src/main.rs (3/5)
@@ -137,11 +137,11 @@ cargo run
 # Counter decreases: Unseen: 12... 11... 10...
 
 # Press 'v' to see all changes
-# Header now: Git Stream | All Changes | ...
+# Header now: Hunky | All Changes | ...
 
 # Press 'v' again to go back to new only
 # Press 'c' to clear and start fresh
-# Header: Git Stream | New Only | ... | Unseen: 15
+# Header: Hunky | New Only | ... | Unseen: 15
 ```
 
 ## Future Enhancements
@@ -164,4 +164,4 @@ Potential additions:
 
 ---
 
-This feature transforms Git Stream from a simple diff viewer into an intelligent change monitor, perfect for modern development workflows with AI assistance.
+This feature transforms Hunky from a simple diff viewer into an intelligent change monitor, perfect for modern development workflows with AI assistance.

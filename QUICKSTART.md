@@ -1,12 +1,12 @@
 
 # Quick Start Guide
 
-## Running Git Stream
+## Running Hunky
 
 ### 1. Build and Run
 
 ```bash
-# In the git-stream directory
+# In the hunky directory
 cargo run
 ```
 
@@ -18,24 +18,24 @@ The TUI will launch in your terminal showing:
 
 ### 2. Try the Demo
 
-In a separate terminal (while Git Stream is running):
+In a separate terminal (while Hunky is running):
 
 ```bash
 ./demo.sh
 ```
 
-This will make several file changes that Git Stream will detect and display automatically!
+This will make several file changes that Hunky will detect and display automatically!
 
 ### 3. Manual Testing
 
-While Git Stream is running, edit any file in the repository:
+While Hunky is running, edit any file in the repository:
 
 ```bash
 # In another terminal
 echo "# Test change" >> README.md
 ```
 
-You'll see the changes appear in Git Stream instantly!
+You'll see the changes appear in Hunky instantly!
 
 ## Understanding the Interface
 
@@ -74,7 +74,7 @@ Press **S** to cycle through:
 
 ## Example Workflow
 
-1. **Start Git Stream in one terminal:**
+1. **Start Hunky in one terminal:**
    ```bash
    cargo run
    ```

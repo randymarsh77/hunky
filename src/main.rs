@@ -10,7 +10,7 @@ use app::App;
 use clap::Parser;
 
 #[derive(Parser, Debug)]
-#[command(name = "git-stream")]
+#[command(name = "hunky")]
 #[command(about = "A TUI for streaming git changes in real-time", long_about = None)]
 struct Args {
     /// Path to the git repository to watch

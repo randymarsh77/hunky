@@ -170,4 +170,4 @@ To test these fixes:
 
 ---
 
-These fixes significantly improve the usability of Git Stream, especially when working with large changesets or watching long-running AI agent sessions.
+These fixes significantly improve the usability of Hunky, especially when working with large changesets or watching long-running AI agent sessions.

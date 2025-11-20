@@ -1,4 +1,4 @@
-# Git Stream
+# Hunky
 
 A Terminal UI (TUI) application for observing git changes in real-time, built with Rust and ratatui.
 
@@ -6,7 +6,7 @@ A Terminal UI (TUI) application for observing git changes in real-time, built wi
 
 ## Overview
 
-Git Stream helps you observe file changes in a git repository as they happen, making it perfect for working alongside coding agents or watching automated processes modify your codebase.
+Hunky helps you observe file changes in a git repository as they happen, making it perfect for working alongside coding agents or watching automated processes modify your codebase.
 
 ## Features
 
@@ -54,7 +54,7 @@ cargo run --release
 Navigate to a git repository and run:
 
 ```bash
-git-stream
+hunky
 # or during development:
 cargo run
 ```
@@ -103,7 +103,7 @@ cargo run
 ## Project Structure
 
 ```
-git-stream/
+hunky/
 ├── src/
 │   ├── main.rs      # Entry point
 │   ├── app.rs       # Main application logic and state

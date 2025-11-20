@@ -1,10 +1,10 @@
 # Test Simulation Guide
 
-This document explains how to use the test simulation script to validate Git Stream's functionality.
+This document explains how to use the test simulation script to validate Hunky's functionality.
 
 ## Overview
 
-The `simulate_changes.sh` script creates a controlled environment for testing Git Stream by:
+The `simulate_changes.sh` script creates a controlled environment for testing Hunky by:
 1. Cloning a test repository into a nested directory
 2. Creating a branch 10 commits behind the default branch
 3. Replaying commits one by one every 5 seconds to simulate live development
@@ -43,7 +43,7 @@ TEST_REPO_URL=https://github.com/owner/repo.git ./simulate_changes.sh
    - Check out a branch 10 commits behind
    - Pause and wait for you to press Enter
 
-2. **Start Git Stream** in another terminal:
+2. **Start Hunky** in another terminal:
    ```bash
    cargo run -- --repo test-repo
    ```
@@ -55,7 +55,7 @@ TEST_REPO_URL=https://github.com/owner/repo.git ./simulate_changes.sh
 
 3. **Press Enter** in the simulation terminal to start replaying commits
 
-4. **Observe Git Stream** as it:
+4. **Observe Hunky** as it:
    - Detects new changes from each replayed commit
    - Streams hunks one at a time
    - Highlights new (unseen) hunks in color
@@ -63,7 +63,7 @@ TEST_REPO_URL=https://github.com/owner/repo.git ./simulate_changes.sh
 
 ## Key Bindings During Test
 
-While Git Stream is running, test these features:
+While Hunky is running, test these features:
 
 - `Space` - Advance to next unseen hunk
 - `n` - Skip to next file
@@ -131,7 +131,7 @@ Some commits may have conflicts when cherry-picked. The script will skip these a
 
 ### No new changes appearing
 - Check that the simulation script is still running
-- Verify Git Stream is watching the correct directory (`--repo test-repo`)
+- Verify Hunky is watching the correct directory (`--repo test-repo`)
 - Ensure file watcher is working (check for console errors)
 
 ### All changes show immediately
@@ -140,10 +140,10 @@ Some commits may have conflicts when cherry-picked. The script will skip these a
 
 ## Example Output
 
-When working correctly, Git Stream should show something like:
+When working correctly, Hunky should show something like:
 
 ```
-Git Stream - New Changes Only | Auto Stream (Real-Time) | Unseen: 3/15 [END]
+Hunky - New Changes Only | Auto Stream (Real-Time) | Unseen: 3/15 [END]
 
 Files Changed (3):
   src/main.rs (1/2)

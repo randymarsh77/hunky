@@ -12,7 +12,7 @@ fn debug_log(msg: String) {
     if let Ok(mut file) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open("git-stream-debug.log")
+        .open("hunky-debug.log")
     {
         let _ = writeln!(file, "[{}] {}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(), msg);
     }

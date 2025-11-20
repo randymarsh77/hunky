@@ -8,7 +8,7 @@ NESTED_DIR="test-repo"
 COMMITS_BEHIND=10
 DELAY_BETWEEN_COMMITS=5  # seconds
 
-echo "Git Stream Test Simulation"
+echo "Hunky Test Simulation"
 echo "============================"
 echo ""
 

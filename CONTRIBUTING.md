@@ -1,6 +1,6 @@
-# Contributing to Git Stream
+# Contributing to Hunky
 
-Thank you for your interest in contributing to Git Stream! This document provides guidelines and information for contributors.
+Thank you for your interest in contributing to Hunky! This document provides guidelines and information for contributors.
 
 ## Development Setup
 

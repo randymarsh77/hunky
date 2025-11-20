@@ -59,7 +59,7 @@ impl<'a> UI<'a> {
                     ViewMode::AllChanges => "All Changes",
                     ViewMode::NewChangesOnly => "New Only",
                 };
-                ("Mode: ", mode_text, "Speed: ", speed_text, view_mode_text, "Git Stream", "Unseen: ")
+                ("Mode: ", mode_text, "Speed: ", speed_text, view_mode_text, "Hunky", "Unseen: ")
             } else if available_width > 50 {
                 // Medium layout - abbreviate mode and speed labels
                 let mode_text = match self.app.mode() {
@@ -75,7 +75,7 @@ impl<'a> UI<'a> {
                     ViewMode::AllChanges => "All",
                     ViewMode::NewChangesOnly => "New",
                 };
-                ("M: ", mode_text, "S: ", speed_text, view_mode_text, "Git Stream", "U: ")
+                ("M: ", mode_text, "S: ", speed_text, view_mode_text, "Hunky", "U: ")
             } else if available_width > 40 {
                 // Compact layout - single letters
                 let mode_text = match self.app.mode() {
@@ -91,7 +91,7 @@ impl<'a> UI<'a> {
                     ViewMode::AllChanges => "All",
                     ViewMode::NewChangesOnly => "New",
                 };
-                ("M:", mode_text, "S:", speed_text, view_mode_text, "GS", "U:")
+                ("M:", mode_text, "S:", speed_text, view_mode_text, "Hunky", "U:")
             } else {
                 // Mini layout - minimal info
                 let mode_text = match self.app.mode() {
@@ -107,7 +107,7 @@ impl<'a> UI<'a> {
                     ViewMode::AllChanges => "A",
                     ViewMode::NewChangesOnly => "N",
                 };
-                ("", mode_text, "", speed_text, view_mode_text, "GS", "U:")
+                ("", mode_text, "", speed_text, view_mode_text, "Hunky", "U:")
             };
         
         let unseen_count = self.app.unseen_hunk_count();

@@ -1,5 +1,5 @@
 {
-  description = "Git Stream - A TUI for observing git changes in real-time";
+  description = "Hunky - A TUI for observing git changes in real-time";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

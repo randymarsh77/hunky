@@ -1,8 +1,8 @@
-# Git Stream - Project Summary
+# Hunky - Project Summary
 
 ## What We Built
 
-Git Stream is a fully functional Terminal User Interface (TUI) application written in Rust using the ratatui framework. It provides real-time monitoring of git repository changes, perfect for observing AI coding agents or any automated code modification process.
+Hunky is a fully functional Terminal User Interface (TUI) application written in Rust using the ratatui framework. It provides real-time monitoring of git repository changes, perfect for observing AI coding agents or any automated code modification process.
 
 ## Core Features Implemented
 
@@ -123,7 +123,7 @@ Git Stream is a fully functional Terminal User Interface (TUI) application writt
 ## Project Structure
 
 ```
-git-stream/
+hunky/
 ├── src/
 │   ├── main.rs         # Entry point, async runtime setup
 │   ├── app.rs          # Core application logic, event loop
@@ -196,7 +196,7 @@ Based on the solid foundation, here are potential additions:
 
 ## Conclusion
 
-Git Stream successfully achieves its goal of providing a real-time view into git repository changes. It's production-ready for personal use and provides an excellent foundation for future enhancements. The modular architecture makes it easy to extend, and the solid Rust foundation ensures reliability and performance.
+Hunky successfully achieves its goal of providing a real-time view into git repository changes. It's production-ready for personal use and provides an excellent foundation for future enhancements. The modular architecture makes it easy to extend, and the solid Rust foundation ensures reliability and performance.
 
 Perfect for:
 - 👨‍💻 Developers working with AI coding agents
