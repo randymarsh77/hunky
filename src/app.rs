@@ -51,6 +51,7 @@ pub enum StreamSpeed {
 pub enum FocusPane {
     FileList,
     HunkView,
+    HelpSidebar,
 }
 
 impl StreamSpeed {
@@ -84,6 +85,7 @@ pub struct App {
     snapshot_receiver: mpsc::UnboundedReceiver<DiffSnapshot>,
     last_auto_advance: Instant,
     scroll_offset: u16,
+    help_scroll_offset: u16,
     reached_end: bool,
     _watcher: FileWatcher,
 }
@@ -127,6 +129,7 @@ impl App {
             snapshot_receiver: rx,
             last_auto_advance: Instant::now(),
             scroll_offset: 0,
+            help_scroll_offset: 0,
             reached_end: true,  // Start at end since all initial hunks are seen
             _watcher: watcher,
         };
@@ -235,10 +238,17 @@ impl App {
                             self.advance_hunk();
                         }
                         KeyCode::Tab => {
-                            // Toggle focus between file list and hunk view
+                            // Cycle focus between panes
                             self.focus = match self.focus {
                                 FocusPane::FileList => FocusPane::HunkView,
-                                FocusPane::HunkView => FocusPane::FileList,
+                                FocusPane::HunkView => {
+                                    if self.show_help {
+                                        FocusPane::HelpSidebar
+                                    } else {
+                                        FocusPane::FileList
+                                    }
+                                }
+                                FocusPane::HelpSidebar => FocusPane::FileList,
                             };
                         }
                         KeyCode::BackTab => {
@@ -246,23 +256,37 @@ impl App {
                             self.previous_hunk();
                         }
                         KeyCode::Char('j') | KeyCode::Down => {
-                            if self.focus == FocusPane::FileList {
-                                // Navigate to next file and jump to its first hunk
-                                self.next_file();
-                                self.scroll_offset = 0;
-                            } else {
-                                // Scroll down in hunk view
-                                self.scroll_offset = self.scroll_offset.saturating_add(1);
+                            match self.focus {
+                                FocusPane::FileList => {
+                                    // Navigate to next file and jump to its first hunk
+                                    self.next_file();
+                                    self.scroll_offset = 0;
+                                }
+                                FocusPane::HunkView => {
+                                    // Scroll down in hunk view
+                                    self.scroll_offset = self.scroll_offset.saturating_add(1);
+                                }
+                                FocusPane::HelpSidebar => {
+                                    // Scroll down in help sidebar
+                                    self.help_scroll_offset = self.help_scroll_offset.saturating_add(1);
+                                }
                             }
                         }
                         KeyCode::Char('k') | KeyCode::Up => {
-                            if self.focus == FocusPane::FileList {
-                                // Navigate to previous file and jump to its first hunk
-                                self.previous_file();
-                                self.scroll_offset = 0;
-                            } else {
-                                // Scroll up in hunk view
-                                self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                            match self.focus {
+                                FocusPane::FileList => {
+                                    // Navigate to previous file and jump to its first hunk
+                                    self.previous_file();
+                                    self.scroll_offset = 0;
+                                }
+                                FocusPane::HunkView => {
+                                    // Scroll up in hunk view
+                                    self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                                }
+                                FocusPane::HelpSidebar => {
+                                    // Scroll up in help sidebar
+                                    self.help_scroll_offset = self.help_scroll_offset.saturating_sub(1);
+                                }
                             }
                         }
                         KeyCode::Char('n') => {
@@ -306,6 +330,11 @@ impl App {
                         KeyCode::Char('h') | KeyCode::Char('H') => {
                             // Toggle help display
                             self.show_help = !self.show_help;
+                            self.help_scroll_offset = 0;
+                            // If hiding help and focus was on help sidebar, move focus to hunk view
+                            if !self.show_help && self.focus == FocusPane::HelpSidebar {
+                                self.focus = FocusPane::HunkView;
+                            }
                         }
                         KeyCode::Char('c') => {
                             // Clear seen hunks
@@ -515,6 +544,10 @@ impl App {
     
     pub fn scroll_offset(&self) -> u16 {
         self.scroll_offset
+    }
+    
+    pub fn help_scroll_offset(&self) -> u16 {
+        self.help_scroll_offset
     }
     
     pub fn reached_end(&self) -> bool {

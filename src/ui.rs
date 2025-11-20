@@ -384,39 +384,42 @@ impl<'a> UI<'a> {
         }
         
         // Show changes with background colors for better visibility
+        // Using very subtle colors: 233 (near-black with slight tint), 234 for contrast
+        // Green additions: bg 22 → 236 (darker gray-green), prefix 28 → 34 (softer green)
+        // Red additions: bg 52 → 235 (darker gray-red), prefix 88 → 124 (softer red)
         for line in &changes {
             if line.starts_with('+') {
                 let content = line.strip_prefix('+').unwrap_or(line);
                 if let Some(ref mut highlighter) = file_highlighter {
-                    // Apply syntax highlighting
+                    // Apply syntax highlighting with very subtle green background
                     let highlighted = highlighter.highlight_line(content);
-                    let mut spans = vec![Span::styled("+ ", Style::default().fg(Color::Green).bg(Color::Rgb(0, 40, 0)))];
+                    let mut spans = vec![Span::styled("+ ", Style::default().fg(Color::Indexed(34)).bg(Color::Indexed(236)))];
                     for (color, text) in highlighted {
-                        // Blend syntax color with green background
-                        spans.push(Span::styled(text, Style::default().fg(color).bg(Color::Rgb(0, 40, 0))));
+                        // Apply syntax colors with subtle green-tinted background
+                        spans.push(Span::styled(text, Style::default().fg(color).bg(Color::Indexed(236))));
                     }
                     lines.push(Line::from(spans));
                 } else {
                     lines.push(Line::from(Span::styled(
                         format!("+ {}", content),
-                        Style::default().fg(Color::Green).bg(Color::Rgb(0, 40, 0))
+                        Style::default().fg(Color::Indexed(34)).bg(Color::Indexed(236))
                     )));
                 }
             } else if line.starts_with('-') {
                 let content = line.strip_prefix('-').unwrap_or(line);
                 if let Some(ref mut highlighter) = file_highlighter {
-                    // Apply syntax highlighting
+                    // Apply syntax highlighting with very subtle red background
                     let highlighted = highlighter.highlight_line(content);
-                    let mut spans = vec![Span::styled("- ", Style::default().fg(Color::Red).bg(Color::Rgb(40, 0, 0)))];
+                    let mut spans = vec![Span::styled("- ", Style::default().fg(Color::Indexed(124)).bg(Color::Indexed(235)))];
                     for (color, text) in highlighted {
-                        // Blend syntax color with red background
-                        spans.push(Span::styled(text, Style::default().fg(color).bg(Color::Rgb(40, 0, 0))));
+                        // Apply syntax colors with subtle red-tinted background
+                        spans.push(Span::styled(text, Style::default().fg(color).bg(Color::Indexed(235))));
                     }
                     lines.push(Line::from(spans));
                 } else {
                     lines.push(Line::from(Span::styled(
                         format!("- {}", content),
-                        Style::default().fg(Color::Red).bg(Color::Rgb(40, 0, 0))
+                        Style::default().fg(Color::Indexed(124)).bg(Color::Indexed(235))
                     )));
                 }
             }
@@ -503,9 +506,19 @@ impl<'a> UI<'a> {
             Line::from("R: Refresh"),
         ];
         
+        let is_focused = self.app.focus() == FocusPane::HelpSidebar;
+        let border_color = if is_focused { Color::Cyan } else { Color::White };
+        let title = if is_focused { "Keys [FOCUSED]" } else { "Keys" };
+        
         let help = Paragraph::new(help_lines)
-            .block(Block::default().borders(Borders::ALL).title("Keys"))
-            .style(Style::default().fg(Color::Gray));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(border_color))
+                    .title(title)
+            )
+            .style(Style::default().fg(Color::Gray))
+            .scroll((self.app.help_scroll_offset(), 0));
         
         frame.render_widget(help, area);
     }

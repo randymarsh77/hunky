@@ -64,8 +64,32 @@ impl<'a> FileHighlighter<'a> {
 }
 
 /// Convert syntect color to ratatui color
+/// Uses 256-color palette for better terminal compatibility (macOS Terminal.app)
 fn syntect_color_to_ratatui(color: syntect::highlighting::Color) -> Color {
-    Color::Rgb(color.r, color.g, color.b)
+    rgb_to_ansi256(color.r, color.g, color.b)
+}
+
+/// Convert RGB color to nearest ANSI 256-color palette index
+/// This provides better compatibility with terminals that don't support 24-bit true color
+fn rgb_to_ansi256(r: u8, g: u8, b: u8) -> Color {
+    // Check if it's a grayscale color
+    let max_diff = r.abs_diff(g).max(g.abs_diff(b)).max(r.abs_diff(b));
+    
+    if max_diff < 10 {
+        // It's grayscale - use the 24 grayscale colors (232-255)
+        // Map 0-255 to 0-23
+        let gray_index = ((r as u16 * 23) / 255) as u8;
+        return Color::Indexed(232 + gray_index);
+    }
+    
+    // Map to 6x6x6 color cube (16-231)
+    // Each component is mapped to 0-5
+    let r_index = (r as u16 * 5 / 255) as u8;
+    let g_index = (g as u16 * 5 / 255) as u8;
+    let b_index = (b as u16 * 5 / 255) as u8;
+    
+    let index = 16 + 36 * r_index + 6 * g_index + b_index;
+    Color::Indexed(index)
 }
 
 impl Default for SyntaxHighlighter {
