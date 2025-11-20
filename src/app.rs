@@ -8,7 +8,7 @@ use ratatui::{
     backend::{Backend, CrosstermBackend},
     Terminal,
 };
-use std::io;
+use std::io::{self, Write};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
@@ -16,6 +16,17 @@ use crate::diff::{DiffSnapshot, FileChange, SeenTracker};
 use crate::git::GitRepo;
 use crate::ui::UI;
 use crate::watcher::FileWatcher;
+
+// Debug logging helper
+fn debug_log(msg: String) {
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("git-stream-debug.log")
+    {
+        let _ = writeln!(file, "[{}] {}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(), msg);
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ViewMode {
@@ -130,8 +141,37 @@ impl App {
     async fn run_loop<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
         loop {
             // Check for new snapshots
-            while let Ok(snapshot) = self.snapshot_receiver.try_recv() {
+            while let Ok(mut snapshot) = self.snapshot_receiver.try_recv() {
+                debug_log(format!("Received snapshot with {} files", snapshot.files.len()));
+                
+                // Mark hunks as seen/unseen based on SeenTracker
+                let mut has_unseen = false;
+                for file in &mut snapshot.files {
+                    for hunk in &mut file.hunks {
+                        hunk.seen = self.seen_tracker.is_seen(&hunk.id);
+                        if !hunk.seen {
+                            has_unseen = true;
+                            debug_log(format!("Found unseen hunk in {}: {:?}", file.path.display(), hunk.id));
+                        }
+                    }
+                }
+                
+                debug_log(format!("Snapshot has unseen hunks: {}", has_unseen));
+                
                 self.snapshots.push(snapshot);
+                
+                // If we have new unseen hunks and we were at the end, reset to start streaming
+                if has_unseen && self.reached_end {
+                    debug_log("Resetting from end to stream new hunks".to_string());
+                    self.reached_end = false;
+                    // Switch to the latest snapshot
+                    self.current_snapshot_index = self.snapshots.len() - 1;
+                    self.current_file_index = 0;
+                    self.current_hunk_index = 0;
+                    // Skip to the first unseen hunk
+                    self.skip_to_next_unseen_hunk();
+                    debug_log(format!("Now at file {} hunk {}", self.current_file_index, self.current_hunk_index));
+                }
             }
             
             // Auto-advance in AutoStream mode

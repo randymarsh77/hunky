@@ -65,28 +65,39 @@ for i in "${!COMMITS[@]}"; do
     commit_msg=$(git log --format=%B -n 1 "$commit" | head -n 1)
     echo "Message: $commit_msg"
     
-    # Cherry-pick the commit (this will create new changes in the working directory)
-    if git cherry-pick "$commit" --no-commit; then
-        echo "Changes applied (not committed)"
+    # Get the diff from this commit and apply it to working directory
+    if git show "$commit" --format= | git apply --reject --whitespace=fix; then
+        echo "Changes applied to working directory (not staged or committed)"
+        
+        # Touch the modified files to ensure file system events fire
+        for file in $(git diff --name-only); do
+            touch "$file" 2>/dev/null || true
+        done
         
         # Show what changed
         echo ""
         echo "Files changed:"
-        git diff --name-status HEAD
-        
-        # Stage the changes
-        git add -A
-        
-        # Commit the changes
-        git commit -m "$commit_msg"
+        git diff --name-only
+        echo ""
+        echo "Hunks visible in git diff:"
+        git diff --stat
         
         echo ""
         echo "Waiting ${DELAY_BETWEEN_COMMITS}s before next commit..."
         sleep "$DELAY_BETWEEN_COMMITS"
     else
-        echo "Warning: Could not apply commit cleanly, skipping..."
-        git cherry-pick --abort 2>/dev/null || true
-        continue
+        echo "Warning: Could not apply commit cleanly"
+        echo "Trying to apply what we can..."
+        # Even with conflicts, some changes may have been applied
+        if [ -n "$(git diff)" ]; then
+            echo "Some changes were applied"
+            echo ""
+            echo "Waiting ${DELAY_BETWEEN_COMMITS}s before next commit..."
+            sleep "$DELAY_BETWEEN_COMMITS"
+        else
+            echo "No changes applied, skipping..."
+            continue
+        fi
     fi
 done
 
