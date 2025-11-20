@@ -98,7 +98,6 @@ impl GitRepo {
         let in_hunk_clone = in_hunk.clone();
         let path_clone = path_buf.clone();
         
-        let hunks_clone2 = hunks.clone();
         let lines_clone2 = current_hunk_lines.clone();
         let in_hunk_clone2 = in_hunk.clone();
         

@@ -47,6 +47,12 @@ pub enum StreamSpeed {
     VerySlow,    // 1 hunk per 10 seconds
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FocusPane {
+    FileList,
+    HunkView,
+}
+
 impl StreamSpeed {
     pub fn duration(&self) -> Duration {
         match self {
@@ -71,6 +77,7 @@ pub struct App {
     wrap_lines: bool,
     compact_mode: bool,
     show_help: bool,
+    focus: FocusPane,
     snapshot_receiver: mpsc::UnboundedReceiver<DiffSnapshot>,
     last_auto_advance: Instant,
     scroll_offset: u16,
@@ -112,6 +119,7 @@ impl App {
             wrap_lines: false,
             compact_mode: true,
             show_help: false,
+            focus: FocusPane::HunkView,
             snapshot_receiver: rx,
             last_auto_advance: Instant::now(),
             scroll_offset: 0,
@@ -201,6 +209,10 @@ impl App {
                     match key.code {
                         KeyCode::Char('q') | KeyCode::Char('Q') => break,
                         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
+                        KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                            // Shift+Space goes to previous hunk
+                            self.previous_hunk();
+                        }
                         KeyCode::Enter => {
                             // Toggle between AutoStream and BufferedMore
                             self.mode = match self.mode {
@@ -221,13 +233,36 @@ impl App {
                             // Advance to next hunk
                             self.advance_hunk();
                         }
+                        KeyCode::Tab => {
+                            // Toggle focus between file list and hunk view
+                            self.focus = match self.focus {
+                                FocusPane::FileList => FocusPane::HunkView,
+                                FocusPane::HunkView => FocusPane::FileList,
+                            };
+                        }
+                        KeyCode::BackTab => {
+                            // Shift+Tab also goes back (some terminals map Shift+Space to BackTab)
+                            self.previous_hunk();
+                        }
                         KeyCode::Char('j') | KeyCode::Down => {
-                            // Scroll down
-                            self.scroll_offset = self.scroll_offset.saturating_add(1);
+                            if self.focus == FocusPane::FileList {
+                                // Navigate to next file and jump to its first hunk
+                                self.next_file();
+                                self.scroll_offset = 0;
+                            } else {
+                                // Scroll down in hunk view
+                                self.scroll_offset = self.scroll_offset.saturating_add(1);
+                            }
                         }
                         KeyCode::Char('k') | KeyCode::Up => {
-                            // Scroll up
-                            self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                            if self.focus == FocusPane::FileList {
+                                // Navigate to previous file and jump to its first hunk
+                                self.previous_file();
+                                self.scroll_offset = 0;
+                            } else {
+                                // Scroll up in hunk view
+                                self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                            }
                         }
                         KeyCode::Char('n') => {
                             // Next file
@@ -349,14 +384,44 @@ impl App {
         }
     }
     
+    fn previous_hunk(&mut self) {
+        if self.snapshots.is_empty() {
+            return;
+        }
+        
+        // Check if we have files before proceeding
+        let files_len = self.snapshots[self.current_snapshot_index].files.len();
+        if files_len == 0 {
+            return;
+        }
+        
+        // Reset scroll when moving to a different hunk
+        self.scroll_offset = 0;
+        
+        // If we're at the first hunk of the current file, go to previous file's last hunk
+        if self.current_hunk_index == 0 {
+            self.previous_file();
+            // Set to the last hunk of the new file
+            let snapshot = &self.snapshots[self.current_snapshot_index];
+            if self.current_file_index < snapshot.files.len() {
+                let last_hunk_index = snapshot.files[self.current_file_index].hunks.len().saturating_sub(1);
+                self.current_hunk_index = last_hunk_index;
+            }
+        } else {
+            // Just go back one hunk in the current file
+            self.current_hunk_index = self.current_hunk_index.saturating_sub(1);
+        }
+        
+        // Clear the reached_end flag when going backwards
+        self.reached_end = false;
+    }
+    
     fn skip_to_next_unseen_hunk(&mut self) {
         if self.snapshots.is_empty() {
             return;
         }
         
         let snapshot = &self.snapshots[self.current_snapshot_index];
-        let start_file = self.current_file_index;
-        let start_hunk = self.current_hunk_index;
         let total_files = snapshot.files.len();
         let mut files_checked = 0;
         
@@ -461,6 +526,10 @@ impl App {
     
     pub fn speed(&self) -> StreamSpeed {
         self.speed
+    }
+    
+    pub fn focus(&self) -> FocusPane {
+        self.focus
     }
     
     pub fn show_filenames_only(&self) -> bool {

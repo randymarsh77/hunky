@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, StreamMode, StreamSpeed, ViewMode};
+use crate::app::{App, FocusPane, StreamMode, StreamSpeed, ViewMode};
 use crate::syntax::SyntaxHighlighter;
 
 pub struct UI<'a> {
@@ -37,55 +37,124 @@ impl<'a> UI<'a> {
     }
     
     fn draw_header(&self, frame: &mut Frame, area: Rect) {
-        let mode_text = match self.app.mode() {
-            StreamMode::AutoStream => "AUTO-STREAM",
-            StreamMode::BufferedMore => "BUFFERED",
-        };
+        let available_width = area.width.saturating_sub(2) as usize; // Subtract borders
+        let help_text = "H: Help";
+        let help_width = help_text.len();
         
-        let speed_text = match self.app.speed() {
-            StreamSpeed::RealTime => "Real-time",
-            StreamSpeed::Slow => "Slow (5s)",
-            StreamSpeed::VerySlow => "Very Slow (10s)",
-        };
-        
-        let view_mode_text = match self.app.view_mode() {
-            ViewMode::AllChanges => "All Changes",
-            ViewMode::NewChangesOnly => "New Only",
-        };
+        // Determine which layout to use based on available width
+        // Wide: > 80, Medium: > 50, Compact: > 40, Mini: <= 40
+        let (mode_label, mode_text, speed_label, speed_text, view_mode_text, title_text, unseen_label) = 
+            if available_width > 80 {
+                // Full layout
+                let mode_text = match self.app.mode() {
+                    StreamMode::AutoStream => "AUTO-STREAM",
+                    StreamMode::BufferedMore => "BUFFERED",
+                };
+                let speed_text = match self.app.speed() {
+                    StreamSpeed::RealTime => "Real-time",
+                    StreamSpeed::Slow => "Slow (5s)",
+                    StreamSpeed::VerySlow => "Very Slow (10s)",
+                };
+                let view_mode_text = match self.app.view_mode() {
+                    ViewMode::AllChanges => "All Changes",
+                    ViewMode::NewChangesOnly => "New Only",
+                };
+                ("Mode: ", mode_text, "Speed: ", speed_text, view_mode_text, "Git Stream", "Unseen: ")
+            } else if available_width > 50 {
+                // Medium layout - abbreviate mode and speed labels
+                let mode_text = match self.app.mode() {
+                    StreamMode::AutoStream => "AUTO",
+                    StreamMode::BufferedMore => "BUFF",
+                };
+                let speed_text = match self.app.speed() {
+                    StreamSpeed::RealTime => "RT",
+                    StreamSpeed::Slow => "5s",
+                    StreamSpeed::VerySlow => "10s",
+                };
+                let view_mode_text = match self.app.view_mode() {
+                    ViewMode::AllChanges => "All",
+                    ViewMode::NewChangesOnly => "New",
+                };
+                ("M: ", mode_text, "S: ", speed_text, view_mode_text, "Git Stream", "U: ")
+            } else if available_width > 40 {
+                // Compact layout - single letters
+                let mode_text = match self.app.mode() {
+                    StreamMode::AutoStream => "A",
+                    StreamMode::BufferedMore => "B",
+                };
+                let speed_text = match self.app.speed() {
+                    StreamSpeed::RealTime => "R",
+                    StreamSpeed::Slow => "S",
+                    StreamSpeed::VerySlow => "V",
+                };
+                let view_mode_text = match self.app.view_mode() {
+                    ViewMode::AllChanges => "All",
+                    ViewMode::NewChangesOnly => "New",
+                };
+                ("M:", mode_text, "S:", speed_text, view_mode_text, "GS", "U:")
+            } else {
+                // Mini layout - minimal info
+                let mode_text = match self.app.mode() {
+                    StreamMode::AutoStream => "A",
+                    StreamMode::BufferedMore => "B",
+                };
+                let speed_text = match self.app.speed() {
+                    StreamSpeed::RealTime => "R",
+                    StreamSpeed::Slow => "S",
+                    StreamSpeed::VerySlow => "V",
+                };
+                let view_mode_text = match self.app.view_mode() {
+                    ViewMode::AllChanges => "A",
+                    ViewMode::NewChangesOnly => "N",
+                };
+                ("", mode_text, "", speed_text, view_mode_text, "GS", "U:")
+            };
         
         let unseen_count = self.app.unseen_hunk_count();
         
-        let title = vec![
-            Span::styled("Git Stream", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        // Build title with help hint on the right side
+        let mut title_left = vec![
+            Span::styled(title_text, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Span::raw(" | "),
             Span::styled(view_mode_text, Style::default().fg(Color::Magenta)),
-            Span::raw(" | Mode: "),
-            Span::styled(mode_text, Style::default().fg(Color::Yellow)),
-            Span::raw(" | Speed: "),
-            Span::styled(speed_text, Style::default().fg(Color::Green)),
-            Span::raw(" | Unseen: "),
-            Span::styled(format!("{}", unseen_count), Style::default().fg(Color::LightBlue)),
         ];
         
-        // Create header with help hint on the right
-        let header_layout = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Min(0),      // Main title (left)
-                Constraint::Length(10),  // Help hint (right)
-            ])
-            .split(area);
+        if !mode_label.is_empty() || available_width > 40 {
+            title_left.push(Span::raw(" | "));
+            if !mode_label.is_empty() {
+                title_left.push(Span::raw(mode_label));
+            }
+            title_left.push(Span::styled(mode_text, Style::default().fg(Color::Yellow)));
+        }
         
-        let header_left = Paragraph::new(Line::from(title))
+        if !speed_label.is_empty() || available_width > 40 {
+            title_left.push(Span::raw(" | "));
+            if !speed_label.is_empty() {
+                title_left.push(Span::raw(speed_label));
+            }
+            title_left.push(Span::styled(speed_text, Style::default().fg(Color::Green)));
+        }
+        
+        if available_width > 35 {
+            title_left.push(Span::raw(" | "));
+            title_left.push(Span::raw(unseen_label));
+            title_left.push(Span::styled(format!("{}", unseen_count), Style::default().fg(Color::LightBlue)));
+        }
+        
+        // Calculate padding to right-align help hint
+        let left_width = title_left.iter().map(|s| s.content.len()).sum::<usize>();
+        let padding_width = available_width.saturating_sub(left_width + help_width);
+        
+        let mut title_line = title_left;
+        if padding_width > 0 {
+            title_line.push(Span::raw(" ".repeat(padding_width)));
+            title_line.push(Span::styled(help_text, Style::default().fg(Color::Gray)));
+        }
+        
+        let header = Paragraph::new(Line::from(title_line))
             .block(Block::default().borders(Borders::ALL));
         
-        let help_hint = Paragraph::new("H: Help")
-            .block(Block::default().borders(Borders::ALL))
-            .style(Style::default().fg(Color::Gray))
-            .alignment(ratatui::layout::Alignment::Right);
-        
-        frame.render_widget(header_left, header_layout[0]);
-        frame.render_widget(help_hint, header_layout[1]);
+        frame.render_widget(header, area);
     }
     
     fn draw_main_content(&self, frame: &mut Frame, area: Rect) {
@@ -158,8 +227,20 @@ impl<'a> UI<'a> {
             ListItem::new(content)
         }).collect();
         
+        let title = if self.app.focus() == FocusPane::FileList {
+            "Files [FOCUSED]"
+        } else {
+            "Files"
+        };
+        
+        let border_style = if self.app.focus() == FocusPane::FileList {
+            Style::default().fg(Color::Cyan)
+        } else {
+            Style::default()
+        };
+        
         let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title("Files"))
+            .block(Block::default().borders(Borders::ALL).title(title).border_style(border_style))
             .highlight_style(Style::default().bg(Color::DarkGray));
         
         frame.render_widget(list, area);
@@ -240,17 +321,14 @@ impl<'a> UI<'a> {
         let mut context_after = Vec::new();
         
         let mut in_changes = false;
-        let mut changes_ended = false;
         
         for line in &hunk.lines {
             if line.starts_with('+') || line.starts_with('-') {
                 in_changes = true;
-                changes_ended = false;
                 changes.push(line.clone());
             } else if !in_changes {
                 context_before.push(line.clone());
             } else {
-                changes_ended = true;
                 context_after.push(line.clone());
             }
         }
@@ -306,14 +384,27 @@ impl<'a> UI<'a> {
             ""
         };
         
+        let title_focus = if self.app.focus() == FocusPane::HunkView {
+            " [FOCUSED]"
+        } else {
+            ""
+        };
+        
+        let border_style = if self.app.focus() == FocusPane::HunkView {
+            Style::default().fg(Color::Cyan)
+        } else {
+            Style::default()
+        };
+        
         let mut paragraph = Paragraph::new(text)
             .block(Block::default().borders(Borders::ALL).title(format!(
-                "{} (Hunk {}/{}{})",
+                "{} (Hunk {}/{}{}{})",
                 file.path.to_string_lossy(),
                 self.app.current_hunk_index() + 1,
                 file.hunks.len(),
-                title_suffix
-            )))
+                title_suffix,
+                title_focus
+            )).border_style(border_style))
             .scroll((self.app.scroll_offset(), 0));
         
         // Apply wrapping if enabled
@@ -327,8 +418,10 @@ impl<'a> UI<'a> {
     fn draw_help_sidebar(&self, frame: &mut Frame, area: Rect) {
         let help_lines = vec![
             Line::from("Q: Quit"),
+            Line::from("Tab: Focus"),
             Line::from("Space: Next"),
-            Line::from("J/K: Scroll"),
+            Line::from("Shift+Space: Prev"),
+            Line::from("J/K: Scroll/Nav"),
             Line::from("N/P: File"),
             Line::from("V: View"),
             Line::from("W: Wrap"),
