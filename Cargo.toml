@@ -27,5 +27,8 @@ similar = "2.6"
 # Syntax highlighting
 syntect = "5.2"
 
+# CLI argument parsing
+clap = { version = "4.5", features = ["derive"] }
+
 # Channels for async communication
 tokio-stream = "0.1"

@@ -81,6 +81,7 @@ impl GitRepo {
         let diff = repo.diff_index_to_workdir(None, Some(&mut diff_opts))?;
         
         let mut hunks = Vec::new();
+        let path_buf = path.to_path_buf();
         
         diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
             let content = String::from_utf8_lossy(line.content()).to_string();
@@ -93,11 +94,10 @@ impl GitRepo {
             
             // Group consecutive lines into hunks
             if hunks.is_empty() || line_type != "context" {
-                hunks.push(Hunk {
-                    old_start: line.old_lineno().unwrap_or(0) as usize,
-                    new_start: line.new_lineno().unwrap_or(0) as usize,
-                    lines: vec![format!("{}{}", line.origin(), content)],
-                });
+                let lines = vec![format!("{}{}", line.origin(), content)];
+                let old_start = line.old_lineno().unwrap_or(0) as usize;
+                let new_start = line.new_lineno().unwrap_or(0) as usize;
+                hunks.push(Hunk::new(old_start, new_start, lines, &path_buf));
             } else {
                 if let Some(last_hunk) = hunks.last_mut() {
                     last_hunk.lines.push(format!("{}{}", line.origin(), content));

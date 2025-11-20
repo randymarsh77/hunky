@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, StreamMode, StreamSpeed};
+use crate::app::{App, StreamMode, StreamSpeed, ViewMode};
 use crate::syntax::SyntaxHighlighter;
 
 pub struct UI<'a> {
@@ -49,12 +49,23 @@ impl<'a> UI<'a> {
             StreamSpeed::VerySlow => "Very Slow (10s)",
         };
         
+        let view_mode_text = match self.app.view_mode() {
+            ViewMode::AllChanges => "All Changes",
+            ViewMode::NewChangesOnly => "New Only",
+        };
+        
+        let unseen_count = self.app.unseen_hunk_count();
+        
         let title = Line::from(vec![
             Span::styled("Git Stream", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::raw(" | "),
+            Span::styled(view_mode_text, Style::default().fg(Color::Magenta)),
             Span::raw(" | Mode: "),
             Span::styled(mode_text, Style::default().fg(Color::Yellow)),
             Span::raw(" | Speed: "),
             Span::styled(speed_text, Style::default().fg(Color::Green)),
+            Span::raw(" | Unseen: "),
+            Span::styled(format!("{}", unseen_count), Style::default().fg(Color::LightBlue)),
         ]);
         
         let header = Paragraph::new(title)
@@ -99,9 +110,17 @@ impl<'a> UI<'a> {
             };
             
             let hunk_count = file.hunks.len();
+            let unseen_count = file.hunks.iter().filter(|h| !h.seen).count();
+            
+            let count_text = if unseen_count < hunk_count {
+                format!(" ({}/{})", unseen_count, hunk_count)
+            } else {
+                format!(" ({})", hunk_count)
+            };
+            
             let content = Line::from(vec![
                 Span::styled(file_name, style),
-                Span::styled(format!(" ({})", hunk_count), Style::default().fg(Color::DarkGray)),
+                Span::styled(count_text, Style::default().fg(Color::DarkGray)),
             ]);
             
             ListItem::new(content)
@@ -139,18 +158,18 @@ impl<'a> UI<'a> {
             return;
         }
         
-        // Get hunks up to the current hunk index
-        let hunks_to_show: Vec<_> = file.hunks.iter()
-            .take(self.app.current_hunk_index() + 1)
-            .collect();
+        // Get only the current hunk (one hunk at a time UX)
+        let current_hunk = file.hunks.get(self.app.current_hunk_index());
         
-        if hunks_to_show.is_empty() {
+        if current_hunk.is_none() {
             let file_title = file.path.to_string_lossy().to_string();
             let empty = Paragraph::new("No hunks to display yet")
                 .block(Block::default().borders(Borders::ALL).title(file_title));
             frame.render_widget(empty, area);
             return;
         }
+        
+        let hunk = current_hunk.unwrap();
         
         // Build the text with syntax highlighting
         let mut lines = Vec::new();
@@ -167,37 +186,51 @@ impl<'a> UI<'a> {
         ]));
         lines.push(Line::from(""));
         
-        for hunk in hunks_to_show {
-            // Add hunk header
-            lines.push(Line::from(Span::styled(
-                format!("@@ -{},{} +{},{} @@", hunk.old_start, hunk.lines.len(), hunk.new_start, hunk.lines.len()),
-                Style::default().fg(Color::Cyan),
-            )));
+        // Add hunk header with seen indicator
+        let hunk_header = if hunk.seen {
+            format!("@@ -{},{} +{},{} @@ [SEEN]", hunk.old_start, hunk.lines.len(), hunk.new_start, hunk.lines.len())
+        } else {
+            format!("@@ -{},{} +{},{} @@", hunk.old_start, hunk.lines.len(), hunk.new_start, hunk.lines.len())
+        };
+        
+        let header_style = if hunk.seen {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            Style::default().fg(Color::Cyan)
+        };
+        
+        lines.push(Line::from(Span::styled(hunk_header, header_style)));
+        
+        // Add hunk lines with coloring
+        for line in &hunk.lines {
+            let style = if line.starts_with('+') {
+                Style::default().fg(Color::Green)
+            } else if line.starts_with('-') {
+                Style::default().fg(Color::Red)
+            } else {
+                Style::default().fg(Color::White)
+            };
             
-            // Add hunk lines with coloring
-            for line in &hunk.lines {
-                let style = if line.starts_with('+') {
-                    Style::default().fg(Color::Green)
-                } else if line.starts_with('-') {
-                    Style::default().fg(Color::Red)
-                } else {
-                    Style::default().fg(Color::White)
-                };
-                
-                lines.push(Line::from(Span::styled(line.clone(), style)));
-            }
-            
-            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(line.clone(), style)));
         }
         
         let text = Text::from(lines);
+        
+        let title_suffix = if self.app.reached_end() {
+            " [END]"
+        } else {
+            ""
+        };
+        
         let paragraph = Paragraph::new(text)
             .block(Block::default().borders(Borders::ALL).title(format!(
-                "{} (Hunk {}/{})",
+                "{} (Hunk {}/{}{})",
                 file.path.to_string_lossy(),
                 self.app.current_hunk_index() + 1,
-                file.hunks.len()
+                file.hunks.len(),
+                title_suffix
             )))
+            .scroll((self.app.scroll_offset(), 0))
             .wrap(Wrap { trim: false });
         
         frame.render_widget(paragraph, area);
@@ -207,10 +240,13 @@ impl<'a> UI<'a> {
         let help_text = vec![
             Span::raw("Q: Quit | "),
             Span::raw("Enter/Esc: Toggle Mode | "),
-            Span::raw("Space: Next Hunk | "),
-            Span::raw("N/P: Next/Prev File | "),
-            Span::raw("F: Toggle Filenames | "),
-            Span::raw("S: Cycle Speed | "),
+            Span::raw("Space: Next | "),
+            Span::raw("J/K/↑/↓: Scroll | "),
+            Span::raw("N/P: File | "),
+            Span::raw("V: View | "),
+            Span::raw("C: Clear | "),
+            Span::raw("F: Names | "),
+            Span::raw("S: Speed | "),
             Span::raw("R: Refresh"),
         ];
         

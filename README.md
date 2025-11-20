@@ -2,6 +2,8 @@
 
 A Terminal UI (TUI) application for observing git changes in real-time, built with Rust and ratatui.
 
+**Status**: ✨ Working and demonstrating real-time change detection!
+
 ## Overview
 
 Git Stream helps you observe file changes in a git repository as they happen, making it perfect for working alongside coding agents or watching automated processes modify your codebase.
@@ -65,13 +67,28 @@ cargo run
 | `Ctrl+C` | Quit the application |
 | `Enter` or `Esc` | Toggle between Auto-Stream and Buffered modes |
 | `Space` | Advance to next hunk (in any mode) |
+| `j` or `↓` | Scroll diff view down |
+| `k` or `↑` | Scroll diff view up |
+| `v` | Toggle between "All Changes" and "New Changes Only" view modes |
+| `c` | Clear all seen hunks (reset tracking) |
 | `n` | Next file |
 | `p` | Previous file |
 | `f` | Toggle between showing all hunks vs. file names only |
 | `s` | Cycle through stream speeds (Real-time → Slow → Very Slow) |
 | `r` | Refresh - capture a new snapshot of git changes |
 
-### Modes
+### View Modes
+
+**All Changes Mode**: Cycles through the current git status, showing all hunks repeatedly.
+
+**New Changes Only Mode** (Default): Only shows hunks that haven't been seen yet. Once a hunk is displayed, it's marked as "seen" and won't be shown again. This is perfect for watching new changes as they come in from AI agents or automated processes.
+
+- Hunks are tracked with a unique ID based on file path, line numbers, and content hash
+- When a file changes and invalidates a hunk, it's automatically removed from the seen list
+- Press `c` to clear all seen hunks and start fresh
+- File list shows "unseen/total" hunk counts: e.g., `main.rs (2/5)` means 2 unseen out of 5 total hunks
+
+### Stream Modes
 
 **Auto-Stream Mode**: Changes appear automatically at the selected speed. Perfect for watching an AI agent work.
 
