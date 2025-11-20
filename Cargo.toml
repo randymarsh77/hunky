@@ -1,0 +1,31 @@
+[package]
+name = "git-stream"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# TUI framework
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Git operations
+git2 = "0.19"
+
+# File system watching
+notify = "6.1"
+
+# Async runtime
+tokio = { version = "1.42", features = ["full"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Parsing and diffing
+similar = "2.6"
+
+# Syntax highlighting
+syntect = "5.2"
+
+# Channels for async communication
+tokio-stream = "0.1"
