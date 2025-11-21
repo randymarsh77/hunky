@@ -233,8 +233,11 @@ impl<'a> UI<'a> {
             
             let hunk_count = file.hunks.len();
             let unseen_count = file.hunks.iter().filter(|h| !h.seen).count();
+            let staged_count = file.hunks.iter().filter(|h| h.staged).count();
             
-            let count_text = if unseen_count < hunk_count {
+            let count_text = if staged_count > 0 {
+                format!(" ({}/{}) [{}✓]", unseen_count, hunk_count, staged_count)
+            } else if unseen_count < hunk_count {
                 format!(" ({}/{})", unseen_count, hunk_count)
             } else {
                 format!(" ({})", hunk_count)
@@ -323,14 +326,17 @@ impl<'a> UI<'a> {
         ]));
         lines.push(Line::from(""));
         
-        // Add hunk header with seen indicator
-        let hunk_header = if hunk.seen {
-            format!("@@ -{},{} +{},{} @@ [SEEN]", hunk.old_start, hunk.lines.len(), hunk.new_start, hunk.lines.len())
-        } else {
-            format!("@@ -{},{} +{},{} @@", hunk.old_start, hunk.lines.len(), hunk.new_start, hunk.lines.len())
+        // Add hunk header with seen and staged indicators
+        let hunk_header = match (hunk.staged, hunk.seen) {
+            (true, true) => format!("@@ -{},{} +{},{} @@ [STAGED ✓] [SEEN]", hunk.old_start, hunk.lines.len(), hunk.new_start, hunk.lines.len()),
+            (true, false) => format!("@@ -{},{} +{},{} @@ [STAGED ✓]", hunk.old_start, hunk.lines.len(), hunk.new_start, hunk.lines.len()),
+            (false, true) => format!("@@ -{},{} +{},{} @@ [SEEN]", hunk.old_start, hunk.lines.len(), hunk.new_start, hunk.lines.len()),
+            (false, false) => format!("@@ -{},{} +{},{} @@", hunk.old_start, hunk.lines.len(), hunk.new_start, hunk.lines.len()),
         };
         
-        let header_style = if hunk.seen {
+        let header_style = if hunk.staged {
+            Style::default().fg(Color::Green)
+        } else if hunk.seen {
             Style::default().fg(Color::DarkGray)
         } else {
             Style::default().fg(Color::Cyan)
@@ -515,6 +521,7 @@ impl<'a> UI<'a> {
             Line::from("C: Clear"),
             Line::from("F: Names"),
             Line::from("S: Speed"),
+            Line::from("Shift+S: Stage/Unstage"),
             Line::from("R: Refresh"),
         ];
         

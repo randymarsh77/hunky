@@ -321,6 +321,10 @@ impl App {
                                 StreamSpeed::Slow => StreamSpeed::Fast,
                             };
                         }
+                        KeyCode::Char('S') => {
+                            // Stage current selection
+                            self.stage_current_selection();
+                        }
                         KeyCode::Char('v') => {
                             // Toggle view mode
                             self.view_mode = match self.view_mode {
@@ -534,6 +538,85 @@ impl App {
         self.current_hunk_index = 0;
     }
     
+    fn stage_current_selection(&mut self) {
+        match self.focus {
+            FocusPane::HunkView => {
+                // Toggle staging for the current hunk
+                if let Some(snapshot) = self.snapshots.get_mut(self.current_snapshot_index) {
+                    if let Some(file) = snapshot.files.get_mut(self.current_file_index) {
+                        if let Some(hunk) = file.hunks.get_mut(self.current_hunk_index) {
+                            if hunk.staged {
+                                // Unstage the hunk
+                                match self.git_repo.unstage_hunk(hunk, &file.path) {
+                                    Ok(_) => {
+                                        hunk.staged = false;
+                                        debug_log(format!("Unstaged hunk in {}", file.path.display()));
+                                    }
+                                    Err(e) => {
+                                        debug_log(format!("Failed to unstage hunk: {}", e));
+                                    }
+                                }
+                            } else {
+                                // Stage the hunk
+                                match self.git_repo.stage_hunk(hunk, &file.path) {
+                                    Ok(_) => {
+                                        hunk.staged = true;
+                                        debug_log(format!("Staged hunk in {}", file.path.display()));
+                                    }
+                                    Err(e) => {
+                                        debug_log(format!("Failed to stage hunk: {}", e));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            FocusPane::FileList => {
+                // Toggle staging for the entire file
+                if let Some(snapshot) = self.snapshots.get_mut(self.current_snapshot_index) {
+                    if let Some(file) = snapshot.files.get_mut(self.current_file_index) {
+                        // Check if any hunks are staged
+                        let any_staged = file.hunks.iter().any(|h| h.staged);
+                        
+                        if any_staged {
+                            // Unstage the file
+                            match self.git_repo.unstage_file(&file.path) {
+                                Ok(_) => {
+                                    // Mark all hunks as unstaged
+                                    for hunk in &mut file.hunks {
+                                        hunk.staged = false;
+                                    }
+                                    debug_log(format!("Unstaged file {}", file.path.display()));
+                                }
+                                Err(e) => {
+                                    debug_log(format!("Failed to unstage file: {}", e));
+                                }
+                            }
+                        } else {
+                            // Stage the file
+                            match self.git_repo.stage_file(&file.path) {
+                                Ok(_) => {
+                                    // Mark all hunks as staged
+                                    for hunk in &mut file.hunks {
+                                        hunk.staged = true;
+                                    }
+                                    debug_log(format!("Staged file {}", file.path.display()));
+                                }
+                                Err(e) => {
+                                    debug_log(format!("Failed to stage file: {}", e));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            FocusPane::HelpSidebar => {
+                // No staging action for help sidebar
+            }
+        }
+    }
+    
     pub fn current_snapshot(&self) -> Option<&DiffSnapshot> {
         self.snapshots.get(self.current_snapshot_index)
     }
@@ -646,7 +729,7 @@ impl App {
     
     /// Get the height (line count) of the help sidebar content
     pub fn help_content_height(&self) -> usize {
-        15 // Number of help lines in draw_help_sidebar
+        16 // Number of help lines in draw_help_sidebar
     }
     
     /// Clamp scroll offset to valid range based on content and viewport height

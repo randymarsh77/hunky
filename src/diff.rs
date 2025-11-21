@@ -22,6 +22,7 @@ pub struct Hunk {
     pub new_start: usize,
     pub lines: Vec<String>,
     pub seen: bool,
+    pub staged: bool,
     pub id: HunkId,
 }
 
@@ -55,6 +56,7 @@ impl Hunk {
             new_start,
             lines,
             seen: false,
+            staged: false,
             id,
         }
     }

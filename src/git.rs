@@ -172,4 +172,172 @@ impl GitRepo {
         
         Ok(status_lines.join("\n"))
     }
+    
+    /// Stage an entire file
+    pub fn stage_file(&self, file_path: &Path) -> Result<()> {
+        let repo = Repository::open(&self.repo_path)?;
+        let mut index = repo.index()?;
+        index.add_path(file_path)?;
+        index.write()?;
+        Ok(())
+    }
+    
+    /// Stage a specific hunk by applying it as a patch
+    pub fn stage_hunk(&self, hunk: &Hunk, file_path: &Path) -> Result<()> {
+        use std::process::Command;
+        use std::io::Write;
+        
+        // Create a proper unified diff patch
+        let mut patch = String::new();
+        
+        // Diff header
+        patch.push_str(&format!("diff --git a/{} b/{}\n", file_path.display(), file_path.display()));
+        patch.push_str(&format!("--- a/{}\n", file_path.display()));
+        patch.push_str(&format!("+++ b/{}\n", file_path.display()));
+        
+        // Count actual add/remove lines for the hunk header
+        let mut old_lines = 0;
+        let mut new_lines = 0;
+        for line in &hunk.lines {
+            if line.starts_with('-') && !line.starts_with("---") {
+                old_lines += 1;
+            } else if line.starts_with('+') && !line.starts_with("+++") {
+                new_lines += 1;
+            } else if line.starts_with(' ') {
+                old_lines += 1;
+                new_lines += 1;
+            }
+        }
+        
+        // Hunk header
+        patch.push_str(&format!("@@ -{},{} +{},{} @@\n", 
+            hunk.old_start, 
+            old_lines, 
+            hunk.new_start, 
+            new_lines
+        ));
+        
+        // Hunk content
+        for line in &hunk.lines {
+            patch.push_str(line);
+            if !line.ends_with('\n') {
+                patch.push('\n');
+            }
+        }
+        
+        // Use git apply to stage the hunk
+        let mut child = Command::new("git")
+            .arg("apply")
+            .arg("--cached")
+            .arg("--unidiff-zero")
+            .arg("-")
+            .current_dir(&self.repo_path)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+        
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(patch.as_bytes())?;
+        }
+        
+        let output = child.wait_with_output()?;
+        
+        if !output.status.success() {
+            let error_msg = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("Failed to stage hunk: {}", error_msg));
+        }
+        
+        Ok(())
+    }
+    
+    /// Unstage an entire file
+    pub fn unstage_file(&self, file_path: &Path) -> Result<()> {
+        use std::process::Command;
+        
+        let output = Command::new("git")
+            .arg("reset")
+            .arg("HEAD")
+            .arg("--")
+            .arg(file_path)
+            .current_dir(&self.repo_path)
+            .output()?;
+        
+        if !output.status.success() {
+            let error_msg = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("Failed to unstage file: {}", error_msg));
+        }
+        
+        Ok(())
+    }
+    
+    /// Unstage a specific hunk by applying the reverse patch
+    pub fn unstage_hunk(&self, hunk: &Hunk, file_path: &Path) -> Result<()> {
+        use std::process::Command;
+        use std::io::Write;
+        
+        // Create a proper unified diff patch
+        let mut patch = String::new();
+        
+        // Diff header
+        patch.push_str(&format!("diff --git a/{} b/{}\n", file_path.display(), file_path.display()));
+        patch.push_str(&format!("--- a/{}\n", file_path.display()));
+        patch.push_str(&format!("+++ b/{}\n", file_path.display()));
+        
+        // Count actual add/remove lines for the hunk header
+        let mut old_lines = 0;
+        let mut new_lines = 0;
+        for line in &hunk.lines {
+            if line.starts_with('-') && !line.starts_with("---") {
+                old_lines += 1;
+            } else if line.starts_with('+') && !line.starts_with("+++") {
+                new_lines += 1;
+            } else if line.starts_with(' ') {
+                old_lines += 1;
+                new_lines += 1;
+            }
+        }
+        
+        // Hunk header
+        patch.push_str(&format!("@@ -{},{} +{},{} @@\n", 
+            hunk.old_start, 
+            old_lines, 
+            hunk.new_start, 
+            new_lines
+        ));
+        
+        // Hunk content
+        for line in &hunk.lines {
+            patch.push_str(line);
+            if !line.ends_with('\n') {
+                patch.push('\n');
+            }
+        }
+        
+        // Use git apply --reverse to unstage the hunk
+        let mut child = Command::new("git")
+            .arg("apply")
+            .arg("--cached")
+            .arg("--reverse")
+            .arg("--unidiff-zero")
+            .arg("-")
+            .current_dir(&self.repo_path)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+        
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(patch.as_bytes())?;
+        }
+        
+        let output = child.wait_with_output()?;
+        
+        if !output.status.success() {
+            let error_msg = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("Failed to unstage hunk: {}", error_msg));
+        }
+        
+        Ok(())
+    }
 }
