@@ -210,10 +210,20 @@ impl App {
             }
             
             // Draw UI
+            let mut diff_viewport_height = 0;
+            let mut help_viewport_height = 0;
             terminal.draw(|f| {
                 let ui = UI::new(self);
-                ui.draw(f);
+                let (diff_h, help_h) = ui.draw(f);
+                diff_viewport_height = diff_h;
+                help_viewport_height = help_h;
             })?;
+            
+            // Clamp scroll offsets after drawing
+            self.clamp_scroll_offset(diff_viewport_height);
+            if self.show_help {
+                self.clamp_help_scroll_offset(help_viewport_height);
+            }
             
             // Handle input (non-blocking)
             if event::poll(Duration::from_millis(50))? {
@@ -263,11 +273,11 @@ impl App {
                                     self.scroll_offset = 0;
                                 }
                                 FocusPane::HunkView => {
-                                    // Scroll down in hunk view
+                                    // Scroll down in hunk view - increment first, will clamp after draw
                                     self.scroll_offset = self.scroll_offset.saturating_add(1);
                                 }
                                 FocusPane::HelpSidebar => {
-                                    // Scroll down in help sidebar
+                                    // Scroll down in help sidebar - increment first, will clamp after draw
                                     self.help_scroll_offset = self.help_scroll_offset.saturating_add(1);
                                 }
                             }
@@ -598,6 +608,66 @@ impl App {
                 .count()
         } else {
             0
+        }
+    }
+    
+    /// Get the height (line count) of the current hunk content
+    pub fn current_hunk_content_height(&self) -> usize {
+        if let Some(snapshot) = self.current_snapshot() {
+            if let Some(file) = snapshot.files.get(self.current_file_index) {
+                if let Some(hunk) = file.hunks.get(self.current_hunk_index) {
+                    // Count: file header (2) + blank + hunk header + blank + context before (max 5) + changes + context after (max 5)
+                    let mut context_before = 0;
+                    let mut changes = 0;
+                    let mut context_after = 0;
+                    let mut in_changes = false;
+                    
+                    for line in &hunk.lines {
+                        if line.starts_with('+') || line.starts_with('-') {
+                            in_changes = true;
+                            changes += 1;
+                        } else if !in_changes {
+                            context_before += 1;
+                        } else {
+                            context_after += 1;
+                        }
+                    }
+                    
+                    // Limit context to 5 lines each
+                    let context_before_shown = context_before.min(5);
+                    let context_after_shown = context_after.min(5);
+                    
+                    return 2 + 1 + 1 + 1 + context_before_shown + changes + context_after_shown;
+                }
+            }
+        }
+        0
+    }
+    
+    /// Get the height (line count) of the help sidebar content
+    pub fn help_content_height(&self) -> usize {
+        15 // Number of help lines in draw_help_sidebar
+    }
+    
+    /// Clamp scroll offset to valid range based on content and viewport height
+    pub fn clamp_scroll_offset(&mut self, viewport_height: u16) {
+        let content_height = self.current_hunk_content_height() as u16;
+        if content_height > viewport_height {
+            let max_scroll = content_height.saturating_sub(viewport_height);
+            self.scroll_offset = self.scroll_offset.min(max_scroll);
+        } else {
+            self.scroll_offset = 0;
+        }
+    }
+    
+    /// Clamp help scroll offset to valid range based on content and viewport height
+    pub fn clamp_help_scroll_offset(&mut self, viewport_height: u16) {
+        let content_height = self.help_content_height() as u16;
+        if content_height > viewport_height {
+            let max_scroll = content_height.saturating_sub(viewport_height);
+            self.help_scroll_offset = self.help_scroll_offset.min(max_scroll);
+        } else {
+            self.help_scroll_offset = 0;
         }
     }
 }

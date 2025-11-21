@@ -38,7 +38,7 @@ impl<'a> UI<'a> {
         }
     }
     
-    pub fn draw(&self, frame: &mut Frame) {
+    pub fn draw(&self, frame: &mut Frame) -> (u16, u16) {
         // Always use compact layout (no footer)
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -49,7 +49,10 @@ impl<'a> UI<'a> {
             .split(frame.area());
         
         self.draw_header(frame, chunks[0]);
-        self.draw_main_content(frame, chunks[1]);
+        let (diff_height, help_height) = self.draw_main_content(frame, chunks[1]);
+        
+        // Return viewport heights for clamping scroll offsets
+        (diff_height, help_height)
     }
     
     fn draw_header(&self, frame: &mut Frame, area: Rect) {
@@ -173,7 +176,7 @@ impl<'a> UI<'a> {
         frame.render_widget(header, area);
     }
     
-    fn draw_main_content(&self, frame: &mut Frame, area: Rect) {
+    fn draw_main_content(&self, frame: &mut Frame, area: Rect) -> (u16, u16) {
         // Check if help sidebar should be shown
         if self.app.show_help() {
             // Split into 3 columns: file list, diff, help
@@ -187,8 +190,9 @@ impl<'a> UI<'a> {
                 .split(area);
             
             self.draw_file_list(frame, chunks[0]);
-            self.draw_diff_content(frame, chunks[1]);
-            self.draw_help_sidebar(frame, chunks[2]);
+            let diff_height = self.draw_diff_content(frame, chunks[1]);
+            let help_height = self.draw_help_sidebar(frame, chunks[2]);
+            (diff_height, help_height)
         } else {
             // No help shown, just file list and diff
             let chunks = Layout::default()
@@ -200,7 +204,8 @@ impl<'a> UI<'a> {
                 .split(area);
             
             self.draw_file_list(frame, chunks[0]);
-            self.draw_diff_content(frame, chunks[1]);
+            let diff_height = self.draw_diff_content(frame, chunks[1]);
+            (diff_height, 0)
         }
     }
     
@@ -262,14 +267,17 @@ impl<'a> UI<'a> {
         frame.render_widget(list, area);
     }
     
-    fn draw_diff_content(&self, frame: &mut Frame, area: Rect) {
+    fn draw_diff_content(&self, frame: &mut Frame, area: Rect) -> u16 {
+        // Return viewport height for clamping
+        let viewport_height = area.height.saturating_sub(2); // Subtract borders
+        
         let file = match self.app.current_file() {
             Some(f) => f,
             None => {
                 let empty = Paragraph::new("No file selected")
                     .block(Block::default().borders(Borders::ALL).title("Diff"));
                 frame.render_widget(empty, area);
-                return;
+                return viewport_height;
             }
         };
         
@@ -284,7 +292,7 @@ impl<'a> UI<'a> {
                 .block(Block::default().borders(Borders::ALL).title(file_info_title))
                 .wrap(Wrap { trim: true });
             frame.render_widget(paragraph, area);
-            return;
+            return viewport_height;
         }
         
         // Get only the current hunk (one hunk at a time UX)
@@ -295,7 +303,7 @@ impl<'a> UI<'a> {
             let empty = Paragraph::new("No hunks to display yet")
                 .block(Block::default().borders(Borders::ALL).title(file_title));
             frame.render_widget(empty, area);
-            return;
+            return viewport_height;
         }
         
         let hunk = current_hunk.unwrap();
@@ -485,9 +493,13 @@ impl<'a> UI<'a> {
         }
         
         frame.render_widget(paragraph, area);
+        viewport_height
     }
     
-    fn draw_help_sidebar(&self, frame: &mut Frame, area: Rect) {
+    fn draw_help_sidebar(&self, frame: &mut Frame, area: Rect) -> u16 {
+        // Return viewport height for clamping
+        let viewport_height = area.height.saturating_sub(2); // Subtract borders
+        
         let help_lines = vec![
             Line::from("Q: Quit"),
             Line::from("Tab: Focus"),
@@ -521,5 +533,6 @@ impl<'a> UI<'a> {
             .scroll((self.app.help_scroll_offset(), 0));
         
         frame.render_widget(help, area);
+        viewport_height
     }
 }
