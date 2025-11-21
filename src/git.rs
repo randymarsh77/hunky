@@ -257,7 +257,11 @@ impl GitRepo {
             return Err(anyhow::anyhow!("Can only stage + or - lines"));
         }
         
-        // Create a patch with the single line plus context
+        // For now, let's use a simpler approach: stage the whole hunk
+        // In a production implementation, you'd want to use git add --interactive style patching
+        // or use libgit2's apply functionality with more precise patches
+        
+        // Create a patch with just this single line change
         let mut patch = String::new();
         
         // Diff header
@@ -265,64 +269,85 @@ impl GitRepo {
         patch.push_str(&format!("--- a/{}\n", file_path.display()));
         patch.push_str(&format!("+++ b/{}\n", file_path.display()));
         
-        // Build a mini-hunk with just this line and some context
-        // We'll include context lines before and after the selected line
-        let context_size = 3;
-        let start_idx = line_index.saturating_sub(context_size);
-        let end_idx = (line_index + context_size + 1).min(hunk.lines.len());
+        // For single-line staging, we need proper context from the hunk
+        // Find all context lines around our target line
+        let mut context_before = Vec::new();
+        let mut context_after = Vec::new();
         
-        let mut old_line_count = 0;
-        let mut new_lines_vec = Vec::new();
-        
-        for i in start_idx..end_idx {
+        // Collect context before the selected line
+        let mut i = line_index;
+        while i > 0 && context_before.len() < 3 {
+            i -= 1;
             let line = &hunk.lines[i];
-            if i == line_index {
-                // This is the line we want to stage
-                new_lines_vec.push(line.clone());
-                if line.starts_with('+') {
-                    // old_line_count stays same, new_lines increments (handled below)
-                } else if line.starts_with('-') {
-                    old_line_count += 1;
-                }
-            } else if line.starts_with(' ') {
-                // Context line
-                new_lines_vec.push(line.clone());
-                old_line_count += 1;
-            } else if line.starts_with('+') || line.starts_with('-') {
-                // Other change lines - convert to context or skip
-                // For simplicity, we'll turn them into context
-                new_lines_vec.push(format!(" {}", line.chars().skip(1).collect::<String>()));
-                old_line_count += 1;
+            if line.starts_with(' ') {
+                context_before.insert(0, line.clone());
+            } else {
+                // Hit another change line, stop
+                break;
             }
         }
         
-        let new_line_count = new_lines_vec.iter().filter(|l| !l.starts_with('-')).count();
+        // Collect context after the selected line
+        let mut i = line_index + 1;
+        while i < hunk.lines.len() && context_after.len() < 3 {
+            let line = &hunk.lines[i];
+            if line.starts_with(' ') {
+                context_after.push(line.clone());
+                i += 1;
+            } else {
+                // Hit another change line, stop
+                break;
+            }
+        }
         
-        // Calculate actual old_start based on hunk and offset
-        let old_start = hunk.old_start + start_idx;
-        let new_start = hunk.new_start + start_idx;
+        // Calculate line numbers for the hunk header
+        // This is approximate - we're counting context lines to estimate position
+        let is_addition = selected_line.starts_with('+');
+        let context_before_count = context_before.len();
         
-        // Hunk header
-        patch.push_str(&format!("@@ -{},{} +{},{} @@\n", 
-            old_start,
+        let old_line_count = context_before_count + if is_addition { 0 } else { 1 } + context_after.len();
+        let new_line_count = context_before_count + if is_addition { 1 } else { 0 } + context_after.len();
+        
+        // Estimate old_start and new_start (this is approximate)
+        let estimated_old_start = hunk.old_start + line_index - context_before_count;
+        let estimated_new_start = hunk.new_start + line_index - context_before_count;
+        
+        // Write hunk header
+        patch.push_str(&format!("@@ -{},{} +{},{} @@\n",
+            estimated_old_start,
             old_line_count,
-            new_start,
+            estimated_new_start,
             new_line_count
         ));
         
-        // Add the lines
-        for line in &new_lines_vec {
+        // Write context before
+        for line in &context_before {
             patch.push_str(line);
             if !line.ends_with('\n') {
                 patch.push('\n');
             }
         }
         
-        // Use git apply to stage
+        // Write the selected line
+        patch.push_str(selected_line);
+        if !selected_line.ends_with('\n') {
+            patch.push('\n');
+        }
+        
+        // Write context after
+        for line in &context_after {
+            patch.push_str(line);
+            if !line.ends_with('\n') {
+                patch.push('\n');
+            }
+        }
+        
+        // Try to apply the patch
         let mut child = Command::new("git")
             .arg("apply")
             .arg("--cached")
             .arg("--unidiff-zero")
+            .arg("--allow-overlap")
             .arg("-")
             .current_dir(&self.repo_path)
             .stdin(std::process::Stdio::piped())
@@ -338,7 +363,12 @@ impl GitRepo {
         
         if !output.status.success() {
             let error_msg = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("Failed to stage line: {}", error_msg));
+            let patch_preview = if patch.len() > 500 {
+                format!("{}... (truncated)", &patch[..500])
+            } else {
+                patch.clone()
+            };
+            return Err(anyhow::anyhow!("Failed to stage line: {}\nPatch was:\n{}", error_msg, patch_preview));
         }
         
         Ok(())

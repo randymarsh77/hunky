@@ -727,10 +727,10 @@ impl App {
                                         // Stage the single line
                                         match self.git_repo.stage_single_line(hunk, self.selected_line_index, &file.path) {
                                             Ok(_) => {
-                                                debug_log(format!("Staged line in {}", file.path.display()));
+                                                debug_log(format!("Staged line {} in {}", self.selected_line_index, file.path.display()));
                                             }
                                             Err(e) => {
-                                                debug_log(format!("Failed to stage line: {}", e));
+                                                debug_log(format!("Failed to stage line: {}. Note: Line-level staging is experimental and may not work for all hunks. Consider staging the entire hunk with Shift+S instead.", e));
                                             }
                                         }
                                     }
