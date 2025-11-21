@@ -33,6 +33,7 @@ impl SyntaxHighlighter {
         }
     }
     
+    #[allow(dead_code)]
     pub fn detect_language(&self, file_path: &Path) -> Option<String> {
         self.syntax_set
             .find_syntax_for_file(file_path)

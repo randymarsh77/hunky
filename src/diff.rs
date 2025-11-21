@@ -5,6 +5,7 @@ use std::time::SystemTime;
 
 #[derive(Debug, Clone)]
 pub struct DiffSnapshot {
+    #[allow(dead_code)]
     pub timestamp: SystemTime,
     pub files: Vec<FileChange>,
 }
@@ -27,6 +28,7 @@ pub struct Hunk {
 }
 
 impl Hunk {
+    #[allow(dead_code)]
     pub fn format(&self) -> String {
         self.lines.join("")
     }
@@ -115,6 +117,7 @@ impl SeenTracker {
         self.seen_hunks.clear();
     }
     
+    #[allow(dead_code)]
     pub fn remove_file_hunks(&mut self, file_path: &PathBuf) {
         self.seen_hunks.retain(|hunk_id| &hunk_id.file_path != file_path);
     }

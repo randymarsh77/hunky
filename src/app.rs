@@ -8,6 +8,7 @@ use ratatui::{
     backend::{Backend, CrosstermBackend},
     Terminal,
 };
+use std::collections::HashMap;
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -78,10 +79,13 @@ pub struct App {
     seen_tracker: SeenTracker,
     show_filenames_only: bool,
     wrap_lines: bool,
-    compact_mode: bool,
     show_help: bool,
     syntax_highlighting: bool,
     focus: FocusPane,
+    line_selection_mode: bool,
+    selected_line_index: usize,
+    // Track last selected line per hunk (file_index, hunk_index) -> line_index
+    hunk_line_memory: HashMap<(usize, usize), usize>,
     snapshot_receiver: mpsc::UnboundedReceiver<DiffSnapshot>,
     last_auto_advance: Instant,
     scroll_offset: u16,
@@ -122,10 +126,12 @@ impl App {
             seen_tracker,
             show_filenames_only: false,
             wrap_lines: false,
-            compact_mode: true,
             show_help: false,
             syntax_highlighting: true,  // Enabled by default
             focus: FocusPane::HunkView,
+            line_selection_mode: false,
+            selected_line_index: 0,
+            hunk_line_memory: HashMap::new(),
             snapshot_receiver: rx,
             last_auto_advance: Instant::now(),
             scroll_offset: 0,
@@ -249,6 +255,7 @@ impl App {
                         }
                         KeyCode::Tab => {
                             // Cycle focus between panes
+                            let old_focus = self.focus;
                             self.focus = match self.focus {
                                 FocusPane::FileList => FocusPane::HunkView,
                                 FocusPane::HunkView => {
@@ -260,6 +267,16 @@ impl App {
                                 }
                                 FocusPane::HelpSidebar => FocusPane::FileList,
                             };
+                            
+                            // Exit line mode when leaving hunk view
+                            if old_focus == FocusPane::HunkView && self.focus != FocusPane::HunkView {
+                                if self.line_selection_mode {
+                                    // Save the current line before exiting
+                                    let hunk_key = (self.current_file_index, self.current_hunk_index);
+                                    self.hunk_line_memory.insert(hunk_key, self.selected_line_index);
+                                    self.line_selection_mode = false;
+                                }
+                            }
                         }
                         KeyCode::BackTab => {
                             // Shift+Tab also goes back (some terminals map Shift+Space to BackTab)
@@ -273,8 +290,13 @@ impl App {
                                     self.scroll_offset = 0;
                                 }
                                 FocusPane::HunkView => {
-                                    // Scroll down in hunk view - increment first, will clamp after draw
-                                    self.scroll_offset = self.scroll_offset.saturating_add(1);
+                                    if self.line_selection_mode {
+                                        // Navigate to next change line
+                                        self.next_change_line();
+                                    } else {
+                                        // Scroll down in hunk view - increment first, will clamp after draw
+                                        self.scroll_offset = self.scroll_offset.saturating_add(1);
+                                    }
                                 }
                                 FocusPane::HelpSidebar => {
                                     // Scroll down in help sidebar - increment first, will clamp after draw
@@ -290,8 +312,13 @@ impl App {
                                     self.scroll_offset = 0;
                                 }
                                 FocusPane::HunkView => {
-                                    // Scroll up in hunk view
-                                    self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                                    if self.line_selection_mode {
+                                        // Navigate to previous change line
+                                        self.previous_change_line();
+                                    } else {
+                                        // Scroll up in hunk view
+                                        self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                                    }
                                 }
                                 FocusPane::HelpSidebar => {
                                     // Scroll up in help sidebar
@@ -340,6 +367,29 @@ impl App {
                         KeyCode::Char('y') => {
                             // Toggle syntax highlighting
                             self.syntax_highlighting = !self.syntax_highlighting;
+                        }
+                        KeyCode::Char('l') | KeyCode::Char('L') => {
+                            // Toggle line selection mode (only when hunk view is focused)
+                            if self.focus == FocusPane::HunkView {
+                                if self.line_selection_mode {
+                                    // Exiting line mode: save current line for this hunk
+                                    let hunk_key = (self.current_file_index, self.current_hunk_index);
+                                    self.hunk_line_memory.insert(hunk_key, self.selected_line_index);
+                                    self.line_selection_mode = false;
+                                } else {
+                                    // Entering line mode: restore saved line or select first
+                                    self.line_selection_mode = true;
+                                    let hunk_key = (self.current_file_index, self.current_hunk_index);
+                                    
+                                    if let Some(&saved_line) = self.hunk_line_memory.get(&hunk_key) {
+                                        // Restore previously selected line
+                                        self.selected_line_index = saved_line;
+                                    } else {
+                                        // No saved line, find first change line
+                                        self.select_first_change_line();
+                                    }
+                                }
+                            }
                         }
                         KeyCode::Char('h') | KeyCode::Char('H') => {
                             // Toggle help display
@@ -400,6 +450,10 @@ impl App {
             }
         }
         
+        // Clear line memory for current hunk before moving
+        let old_hunk_key = (self.current_file_index, self.current_hunk_index);
+        self.hunk_line_memory.remove(&old_hunk_key);
+        
         // Check if we have files before proceeding
         let snapshot_ref = &self.snapshots[self.current_snapshot_index];
         if snapshot_ref.files.is_empty() {
@@ -442,6 +496,10 @@ impl App {
         if files_len == 0 {
             return;
         }
+        
+        // Clear line memory for current hunk before moving
+        let old_hunk_key = (self.current_file_index, self.current_hunk_index);
+        self.hunk_line_memory.remove(&old_hunk_key);
         
         // Reset scroll when moving to a different hunk
         self.scroll_offset = 0;
@@ -516,8 +574,16 @@ impl App {
             return;
         }
         
-        self.current_file_index = (self.current_file_index + 1) % snapshot.files.len();
+        // Clear line memory for old file
+        let old_file_index = self.current_file_index;
+        
+        // Calculate next file index before clearing memory
+        let files_len = snapshot.files.len();
+        self.current_file_index = (self.current_file_index + 1) % files_len;
         self.current_hunk_index = 0;
+        
+        // Now clear the memory for the old file (after we're done with snapshot)
+        self.clear_line_memory_for_file(old_file_index);
     }
     
     fn previous_file(&mut self) {
@@ -530,41 +596,174 @@ impl App {
             return;
         }
         
+        // Clear line memory for old file
+        let old_file_index = self.current_file_index;
+        
+        // Calculate previous file index before clearing memory
+        let files_len = snapshot.files.len();
         if self.current_file_index == 0 {
-            self.current_file_index = snapshot.files.len() - 1;
+            self.current_file_index = files_len - 1;
         } else {
             self.current_file_index -= 1;
         }
         self.current_hunk_index = 0;
+        
+        // Now clear the memory for the old file (after we're done with snapshot)
+        self.clear_line_memory_for_file(old_file_index);
+    }
+    
+    fn next_change_line(&mut self) {
+        if let Some(snapshot) = self.current_snapshot() {
+            if let Some(file) = snapshot.files.get(self.current_file_index) {
+                if let Some(hunk) = file.hunks.get(self.current_hunk_index) {
+                    // Build list of change lines (filter same way as UI does)
+                    let changes: Vec<(usize, &String)> = hunk.lines.iter()
+                        .enumerate()
+                        .filter(|(_, line)| {
+                            (line.starts_with('+') && !line.starts_with("+++")) ||
+                            (line.starts_with('-') && !line.starts_with("---"))
+                        })
+                        .collect();
+                    
+                    if !changes.is_empty() {
+                        // Find where we are in the changes list
+                        let current_in_changes = changes.iter()
+                            .position(|(idx, _)| *idx == self.selected_line_index);
+                        
+                        match current_in_changes {
+                            Some(pos) if pos + 1 < changes.len() => {
+                                // Move to next change
+                                self.selected_line_index = changes[pos + 1].0;
+                            }
+                            None => {
+                                // Not on a change line, go to first
+                                self.selected_line_index = changes[0].0;
+                            }
+                            _ => {
+                                // At the end, stay there (or could wrap to first)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    fn previous_change_line(&mut self) {
+        if let Some(snapshot) = self.current_snapshot() {
+            if let Some(file) = snapshot.files.get(self.current_file_index) {
+                if let Some(hunk) = file.hunks.get(self.current_hunk_index) {
+                    // Build list of change lines (filter same way as UI does)
+                    let changes: Vec<(usize, &String)> = hunk.lines.iter()
+                        .enumerate()
+                        .filter(|(_, line)| {
+                            (line.starts_with('+') && !line.starts_with("+++")) ||
+                            (line.starts_with('-') && !line.starts_with("---"))
+                        })
+                        .collect();
+                    
+                    if !changes.is_empty() {
+                        // Find where we are in the changes list
+                        let current_in_changes = changes.iter()
+                            .position(|(idx, _)| *idx == self.selected_line_index);
+                        
+                        match current_in_changes {
+                            Some(pos) if pos > 0 => {
+                                // Move to previous change
+                                self.selected_line_index = changes[pos - 1].0;
+                            }
+                            None => {
+                                // Not on a change line, go to last
+                                self.selected_line_index = changes[changes.len() - 1].0;
+                            }
+                            _ => {
+                                // At the beginning, stay there (or could wrap to last)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    fn select_first_change_line(&mut self) {
+        if let Some(snapshot) = self.current_snapshot() {
+            if let Some(file) = snapshot.files.get(self.current_file_index) {
+                if let Some(hunk) = file.hunks.get(self.current_hunk_index) {
+                    // Find first change line
+                    for (idx, line) in hunk.lines.iter().enumerate() {
+                        if (line.starts_with('+') && !line.starts_with("+++")) ||
+                           (line.starts_with('-') && !line.starts_with("---")) {
+                            self.selected_line_index = idx;
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+        // Fallback
+        self.selected_line_index = 0;
+    }
+    
+    fn clear_line_memory_for_file(&mut self, file_index: usize) {
+        // Remove all entries for this file
+        self.hunk_line_memory.retain(|(f_idx, _), _| *f_idx != file_index);
     }
     
     fn stage_current_selection(&mut self) {
         match self.focus {
             FocusPane::HunkView => {
-                // Toggle staging for the current hunk
-                if let Some(snapshot) = self.snapshots.get_mut(self.current_snapshot_index) {
-                    if let Some(file) = snapshot.files.get_mut(self.current_file_index) {
-                        if let Some(hunk) = file.hunks.get_mut(self.current_hunk_index) {
-                            if hunk.staged {
-                                // Unstage the hunk
-                                match self.git_repo.unstage_hunk(hunk, &file.path) {
-                                    Ok(_) => {
-                                        hunk.staged = false;
-                                        debug_log(format!("Unstaged hunk in {}", file.path.display()));
-                                    }
-                                    Err(e) => {
-                                        debug_log(format!("Failed to unstage hunk: {}", e));
+                // Check if we're in line selection mode
+                if self.line_selection_mode {
+                    // Stage/unstage a single line
+                    if let Some(snapshot) = self.snapshots.get_mut(self.current_snapshot_index) {
+                        if let Some(file) = snapshot.files.get_mut(self.current_file_index) {
+                            if let Some(hunk) = file.hunks.get_mut(self.current_hunk_index) {
+                                // Get the selected line
+                                if let Some(selected_line) = hunk.lines.get(self.selected_line_index) {
+                                    // Only stage change lines (+ or -)
+                                    if (selected_line.starts_with('+') && !selected_line.starts_with("+++")) ||
+                                       (selected_line.starts_with('-') && !selected_line.starts_with("---")) {
+                                        // Stage the single line
+                                        match self.git_repo.stage_single_line(hunk, self.selected_line_index, &file.path) {
+                                            Ok(_) => {
+                                                debug_log(format!("Staged line in {}", file.path.display()));
+                                            }
+                                            Err(e) => {
+                                                debug_log(format!("Failed to stage line: {}", e));
+                                            }
+                                        }
                                     }
                                 }
-                            } else {
-                                // Stage the hunk
-                                match self.git_repo.stage_hunk(hunk, &file.path) {
-                                    Ok(_) => {
-                                        hunk.staged = true;
-                                        debug_log(format!("Staged hunk in {}", file.path.display()));
+                            }
+                        }
+                    }
+                } else {
+                    // Toggle staging for the current hunk
+                    if let Some(snapshot) = self.snapshots.get_mut(self.current_snapshot_index) {
+                        if let Some(file) = snapshot.files.get_mut(self.current_file_index) {
+                            if let Some(hunk) = file.hunks.get_mut(self.current_hunk_index) {
+                                if hunk.staged {
+                                    // Unstage the hunk
+                                    match self.git_repo.unstage_hunk(hunk, &file.path) {
+                                        Ok(_) => {
+                                            hunk.staged = false;
+                                            debug_log(format!("Unstaged hunk in {}", file.path.display()));
+                                        }
+                                        Err(e) => {
+                                            debug_log(format!("Failed to unstage hunk: {}", e));
+                                        }
                                     }
-                                    Err(e) => {
-                                        debug_log(format!("Failed to stage hunk: {}", e));
+                                } else {
+                                    // Stage the hunk
+                                    match self.git_repo.stage_hunk(hunk, &file.path) {
+                                        Ok(_) => {
+                                            hunk.staged = true;
+                                            debug_log(format!("Staged hunk in {}", file.path.display()));
+                                        }
+                                        Err(e) => {
+                                            debug_log(format!("Failed to stage hunk: {}", e));
+                                        }
                                     }
                                 }
                             }
@@ -655,6 +854,14 @@ impl App {
         self.mode
     }
     
+    pub fn line_selection_mode(&self) -> bool {
+        self.line_selection_mode
+    }
+    
+    pub fn selected_line_index(&self) -> usize {
+        self.selected_line_index
+    }
+    
     pub fn speed(&self) -> StreamSpeed {
         self.speed
     }
@@ -669,10 +876,6 @@ impl App {
     
     pub fn wrap_lines(&self) -> bool {
         self.wrap_lines
-    }
-    
-    pub fn compact_mode(&self) -> bool {
-        self.compact_mode
     }
     
     pub fn show_help(&self) -> bool {
@@ -729,7 +932,7 @@ impl App {
     
     /// Get the height (line count) of the help sidebar content
     pub fn help_content_height(&self) -> usize {
-        16 // Number of help lines in draw_help_sidebar
+        17 // Number of help lines in draw_help_sidebar
     }
     
     /// Clamp scroll offset to valid range based on content and viewport height

@@ -352,10 +352,10 @@ impl<'a> UI<'a> {
         
         let mut in_changes = false;
         
-        for line in &hunk.lines {
+        for (idx, line) in hunk.lines.iter().enumerate() {
             if line.starts_with('+') || line.starts_with('-') {
                 in_changes = true;
-                changes.push(line.clone());
+                changes.push((idx, line.clone()));
             } else if !in_changes {
                 context_before.push(line.clone());
             } else {
@@ -401,22 +401,35 @@ impl<'a> UI<'a> {
         // Using very subtle colors: 233 (near-black with slight tint), 234 for contrast
         // Green additions: bg 22 → 236 (darker gray-green), prefix 28 → 34 (softer green)
         // Red additions: bg 52 → 235 (darker gray-red), prefix 88 → 124 (softer red)
-        for line in &changes {
+        let line_selection_mode = self.app.line_selection_mode();
+        let selected_line = self.app.selected_line_index();
+        
+        for (original_idx, line) in &changes {
+            let is_selected = line_selection_mode && *original_idx == selected_line;
+            let selection_marker = if is_selected { "► " } else { "" };
+            
             if line.starts_with('+') {
                 let content = line.strip_prefix('+').unwrap_or(line);
                 if let Some(ref mut highlighter) = file_highlighter {
                     // Apply syntax highlighting with very subtle green background
                     let highlighted = highlighter.highlight_line(content);
-                    let mut spans = vec![Span::styled("+ ", Style::default().fg(Color::Indexed(34)).bg(Color::Indexed(236)))];
+                    let bg_color = if is_selected { Color::Indexed(28) } else { Color::Indexed(236) };
+                    let fg_color = if is_selected { Color::Indexed(46) } else { Color::Indexed(34) };
+                    let mut spans = vec![Span::styled(
+                        format!("{}+ ", selection_marker),
+                        Style::default().fg(fg_color).bg(bg_color)
+                    )];
                     for (color, text) in highlighted {
                         // Apply syntax colors with subtle green-tinted background
-                        spans.push(Span::styled(text, Style::default().fg(color).bg(Color::Indexed(236))));
+                        spans.push(Span::styled(text, Style::default().fg(color).bg(bg_color)));
                     }
                     lines.push(Line::from(spans));
                 } else {
+                    let bg_color = if is_selected { Color::Indexed(28) } else { Color::Indexed(236) };
+                    let fg_color = if is_selected { Color::Indexed(46) } else { Color::Indexed(34) };
                     lines.push(Line::from(Span::styled(
-                        format!("+ {}", content),
-                        Style::default().fg(Color::Indexed(34)).bg(Color::Indexed(236))
+                        format!("{}+ {}", selection_marker, content),
+                        Style::default().fg(fg_color).bg(bg_color)
                     )));
                 }
             } else if line.starts_with('-') {
@@ -424,16 +437,23 @@ impl<'a> UI<'a> {
                 if let Some(ref mut highlighter) = file_highlighter {
                     // Apply syntax highlighting with very subtle red background
                     let highlighted = highlighter.highlight_line(content);
-                    let mut spans = vec![Span::styled("- ", Style::default().fg(Color::Indexed(124)).bg(Color::Indexed(235)))];
+                    let bg_color = if is_selected { Color::Indexed(52) } else { Color::Indexed(235) };
+                    let fg_color = if is_selected { Color::Indexed(196) } else { Color::Indexed(124) };
+                    let mut spans = vec![Span::styled(
+                        format!("{}- ", selection_marker),
+                        Style::default().fg(fg_color).bg(bg_color)
+                    )];
                     for (color, text) in highlighted {
                         // Apply syntax colors with subtle red-tinted background
-                        spans.push(Span::styled(text, Style::default().fg(color).bg(Color::Indexed(235))));
+                        spans.push(Span::styled(text, Style::default().fg(color).bg(bg_color)));
                     }
                     lines.push(Line::from(spans));
                 } else {
+                    let bg_color = if is_selected { Color::Indexed(52) } else { Color::Indexed(235) };
+                    let fg_color = if is_selected { Color::Indexed(196) } else { Color::Indexed(124) };
                     lines.push(Line::from(Span::styled(
-                        format!("- {}", content),
-                        Style::default().fg(Color::Indexed(124)).bg(Color::Indexed(235))
+                        format!("{}- {}", selection_marker, content),
+                        Style::default().fg(fg_color).bg(bg_color)
                     )));
                 }
             }
@@ -521,6 +541,7 @@ impl<'a> UI<'a> {
             Line::from("C: Clear"),
             Line::from("F: Names"),
             Line::from("S: Speed"),
+            Line::from("L: Line Mode"),
             Line::from("Shift+S: Stage/Unstage"),
             Line::from("R: Refresh"),
         ];

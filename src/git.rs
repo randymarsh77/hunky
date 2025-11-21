@@ -27,12 +27,19 @@ impl GitRepo {
     pub fn get_diff_snapshot(&self) -> Result<DiffSnapshot> {
         let repo = Repository::open(&self.repo_path)?;
         
-        // Get the diff between HEAD and working directory
+        // Get the diff between HEAD and working directory (includes both staged and unstaged)
         let mut diff_opts = DiffOptions::new();
         diff_opts.include_untracked(true);
         diff_opts.recurse_untracked_dirs(true);
         
-        let diff = repo.diff_index_to_workdir(None, Some(&mut diff_opts))?;
+        // Get HEAD tree (handle empty repo case)
+        let head_tree = match repo.head() {
+            Ok(head) => head.peel_to_tree().ok(),
+            Err(_) => None,
+        };
+        
+        // This shows all changes from HEAD to workdir (both staged and unstaged)
+        let diff = repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut diff_opts))?;
         
         let mut files = Vec::new();
         
@@ -78,7 +85,14 @@ impl GitRepo {
         diff_opts.pathspec(path);
         diff_opts.context_lines(3);
         
-        let diff = repo.diff_index_to_workdir(None, Some(&mut diff_opts))?;
+        // Get HEAD tree (handle empty repo case)
+        let head_tree = match repo.head() {
+            Ok(head) => head.peel_to_tree().ok(),
+            Err(_) => None,
+        };
+        
+        // Get diff from HEAD to workdir (includes both staged and unstaged)
+        let diff = repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut diff_opts))?;
         
         let path_buf = path.to_path_buf();
         
@@ -145,32 +159,6 @@ impl GitRepo {
         // Extract the hunks - clone to avoid lifetime issues
         let result = hunks.borrow().clone();
         Ok(result)
-    }
-    
-    pub fn get_status(&self) -> Result<String> {
-        let repo = Repository::open(&self.repo_path)?;
-        let statuses = repo.statuses(None)?;
-        
-        let mut status_lines = Vec::new();
-        for entry in statuses.iter() {
-            if let Some(path) = entry.path() {
-                let status = entry.status();
-                let status_str = if status.is_wt_new() {
-                    "new file"
-                } else if status.is_wt_modified() {
-                    "modified"
-                } else if status.is_wt_deleted() {
-                    "deleted"
-                } else if status.is_wt_renamed() {
-                    "renamed"
-                } else {
-                    "unknown"
-                };
-                status_lines.push(format!("{}: {}", status_str, path));
-            }
-        }
-        
-        Ok(status_lines.join("\n"))
     }
     
     /// Stage an entire file
@@ -246,6 +234,111 @@ impl GitRepo {
         if !output.status.success() {
             let error_msg = String::from_utf8_lossy(&output.stderr);
             return Err(anyhow::anyhow!("Failed to stage hunk: {}", error_msg));
+        }
+        
+        Ok(())
+    }
+    
+    /// Stage a single line from a hunk
+    pub fn stage_single_line(&self, hunk: &Hunk, line_index: usize, file_path: &Path) -> Result<()> {
+        use std::process::Command;
+        use std::io::Write;
+        
+        // Verify the line exists
+        if line_index >= hunk.lines.len() {
+            return Err(anyhow::anyhow!("Line index out of bounds"));
+        }
+        
+        let selected_line = &hunk.lines[line_index];
+        
+        // Only allow staging change lines
+        if !((selected_line.starts_with('+') && !selected_line.starts_with("+++")) ||
+             (selected_line.starts_with('-') && !selected_line.starts_with("---"))) {
+            return Err(anyhow::anyhow!("Can only stage + or - lines"));
+        }
+        
+        // Create a patch with the single line plus context
+        let mut patch = String::new();
+        
+        // Diff header
+        patch.push_str(&format!("diff --git a/{} b/{}\n", file_path.display(), file_path.display()));
+        patch.push_str(&format!("--- a/{}\n", file_path.display()));
+        patch.push_str(&format!("+++ b/{}\n", file_path.display()));
+        
+        // Build a mini-hunk with just this line and some context
+        // We'll include context lines before and after the selected line
+        let context_size = 3;
+        let start_idx = line_index.saturating_sub(context_size);
+        let end_idx = (line_index + context_size + 1).min(hunk.lines.len());
+        
+        let mut old_line_count = 0;
+        let mut new_lines_vec = Vec::new();
+        
+        for i in start_idx..end_idx {
+            let line = &hunk.lines[i];
+            if i == line_index {
+                // This is the line we want to stage
+                new_lines_vec.push(line.clone());
+                if line.starts_with('+') {
+                    // old_line_count stays same, new_lines increments (handled below)
+                } else if line.starts_with('-') {
+                    old_line_count += 1;
+                }
+            } else if line.starts_with(' ') {
+                // Context line
+                new_lines_vec.push(line.clone());
+                old_line_count += 1;
+            } else if line.starts_with('+') || line.starts_with('-') {
+                // Other change lines - convert to context or skip
+                // For simplicity, we'll turn them into context
+                new_lines_vec.push(format!(" {}", line.chars().skip(1).collect::<String>()));
+                old_line_count += 1;
+            }
+        }
+        
+        let new_line_count = new_lines_vec.iter().filter(|l| !l.starts_with('-')).count();
+        
+        // Calculate actual old_start based on hunk and offset
+        let old_start = hunk.old_start + start_idx;
+        let new_start = hunk.new_start + start_idx;
+        
+        // Hunk header
+        patch.push_str(&format!("@@ -{},{} +{},{} @@\n", 
+            old_start,
+            old_line_count,
+            new_start,
+            new_line_count
+        ));
+        
+        // Add the lines
+        for line in &new_lines_vec {
+            patch.push_str(line);
+            if !line.ends_with('\n') {
+                patch.push('\n');
+            }
+        }
+        
+        // Use git apply to stage
+        let mut child = Command::new("git")
+            .arg("apply")
+            .arg("--cached")
+            .arg("--unidiff-zero")
+            .arg("-")
+            .current_dir(&self.repo_path)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+        
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(patch.as_bytes())?;
+        }
+        
+        let output = child.wait_with_output()?;
+        
+        if !output.status.success() {
+            let error_msg = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("Failed to stage line: {}", error_msg));
         }
         
         Ok(())
