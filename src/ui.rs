@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, FocusPane, StreamMode, StreamSpeed, ViewMode};
+use crate::app::{App, FocusPane, Mode, StreamSpeed, StreamingType};
 use crate::syntax::SyntaxHighlighter;
 
 /// Fade a color by reducing its brightness (for context lines)
@@ -62,103 +62,59 @@ impl<'a> UI<'a> {
         
         // Determine which layout to use based on available width
         // Wide: > 80, Medium: > 50, Compact: > 40, Mini: <= 40
-        let (mode_label, mode_text, speed_label, speed_text, view_mode_text, title_text, unseen_label) = 
+        let (mode_label, mode_text, title_text) = 
             if available_width > 80 {
                 // Full layout
                 let mode_text = match self.app.mode() {
-                    StreamMode::AutoStream => "AUTO-STREAM",
-                    StreamMode::BufferedMore => "BUFFERED",
+                    Mode::View => "VIEW",
+                    Mode::Streaming(StreamingType::Buffered) => "STREAMING (Buffered)",
+                    Mode::Streaming(StreamingType::Auto(StreamSpeed::Fast)) => "STREAMING (Auto - Fast)",
+                    Mode::Streaming(StreamingType::Auto(StreamSpeed::Medium)) => "STREAMING (Auto - Medium)",
+                    Mode::Streaming(StreamingType::Auto(StreamSpeed::Slow)) => "STREAMING (Auto - Slow)",
                 };
-                let speed_text = match self.app.speed() {
-                    StreamSpeed::Fast => "Fast",
-                    StreamSpeed::Medium => "Medium",
-                    StreamSpeed::Slow => "Slow",
-                };
-                let view_mode_text = match self.app.view_mode() {
-                    ViewMode::AllChanges => "All Changes",
-                    ViewMode::NewChangesOnly => "New Only",
-                };
-                ("Mode: ", mode_text, "Speed: ", speed_text, view_mode_text, "Hunky", "Unseen: ")
+                ("Mode: ", mode_text, "Hunky")
             } else if available_width > 50 {
-                // Medium layout - abbreviate mode and speed labels
+                // Medium layout
                 let mode_text = match self.app.mode() {
-                    StreamMode::AutoStream => "AUTO",
-                    StreamMode::BufferedMore => "BUFF",
+                    Mode::View => "VIEW",
+                    Mode::Streaming(StreamingType::Buffered) => "STREAM (Buff)",
+                    Mode::Streaming(StreamingType::Auto(StreamSpeed::Fast)) => "STREAM (Fast)",
+                    Mode::Streaming(StreamingType::Auto(StreamSpeed::Medium)) => "STREAM (Med)",
+                    Mode::Streaming(StreamingType::Auto(StreamSpeed::Slow)) => "STREAM (Slow)",
                 };
-                let speed_text = match self.app.speed() {
-                    StreamSpeed::Fast => "Fast",
-                    StreamSpeed::Medium => "Med",
-                    StreamSpeed::Slow => "Slow",
-                };
-                let view_mode_text = match self.app.view_mode() {
-                    ViewMode::AllChanges => "All",
-                    ViewMode::NewChangesOnly => "New",
-                };
-                ("M: ", mode_text, "S: ", speed_text, view_mode_text, "Hunky", "U: ")
+                ("M: ", mode_text, "Hunky")
             } else if available_width > 40 {
-                // Compact layout - single letters
+                // Compact layout
                 let mode_text = match self.app.mode() {
-                    StreamMode::AutoStream => "A",
-                    StreamMode::BufferedMore => "B",
+                    Mode::View => "VIEW",
+                    Mode::Streaming(StreamingType::Buffered) => "STM:B",
+                    Mode::Streaming(StreamingType::Auto(StreamSpeed::Fast)) => "STM:F",
+                    Mode::Streaming(StreamingType::Auto(StreamSpeed::Medium)) => "STM:M",
+                    Mode::Streaming(StreamingType::Auto(StreamSpeed::Slow)) => "STM:S",
                 };
-                let speed_text = match self.app.speed() {
-                    StreamSpeed::Fast => "F",
-                    StreamSpeed::Medium => "M",
-                    StreamSpeed::Slow => "S",
-                };
-                let view_mode_text = match self.app.view_mode() {
-                    ViewMode::AllChanges => "All",
-                    ViewMode::NewChangesOnly => "New",
-                };
-                ("M:", mode_text, "S:", speed_text, view_mode_text, "Hunky", "U:")
+                ("M:", mode_text, "Hunky")
             } else {
                 // Mini layout - minimal info
                 let mode_text = match self.app.mode() {
-                    StreamMode::AutoStream => "A",
-                    StreamMode::BufferedMore => "B",
+                    Mode::View => "V",
+                    Mode::Streaming(StreamingType::Buffered) => "B",
+                    Mode::Streaming(StreamingType::Auto(StreamSpeed::Fast)) => "F",
+                    Mode::Streaming(StreamingType::Auto(StreamSpeed::Medium)) => "M",
+                    Mode::Streaming(StreamingType::Auto(StreamSpeed::Slow)) => "S",
                 };
-                let speed_text = match self.app.speed() {
-                    StreamSpeed::Fast => "F",
-                    StreamSpeed::Medium => "M",
-                    StreamSpeed::Slow => "S",
-                };
-                let view_mode_text = match self.app.view_mode() {
-                    ViewMode::AllChanges => "A",
-                    ViewMode::NewChangesOnly => "N",
-                };
-                ("", mode_text, "", speed_text, view_mode_text, "Hunky", "U:")
+                ("", mode_text, "Hunky")
             };
-        
-        let unseen_count = self.app.unseen_hunk_count();
         
         // Build title with help hint on the right side
         let mut title_left = vec![
             Span::styled(title_text, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Span::raw(" | "),
-            Span::styled(view_mode_text, Style::default().fg(Color::Magenta)),
         ];
         
-        if !mode_label.is_empty() || available_width > 40 {
-            title_left.push(Span::raw(" | "));
-            if !mode_label.is_empty() {
-                title_left.push(Span::raw(mode_label));
-            }
-            title_left.push(Span::styled(mode_text, Style::default().fg(Color::Yellow)));
+        if !mode_label.is_empty() {
+            title_left.push(Span::raw(mode_label));
         }
-        
-        if !speed_label.is_empty() || available_width > 40 {
-            title_left.push(Span::raw(" | "));
-            if !speed_label.is_empty() {
-                title_left.push(Span::raw(speed_label));
-            }
-            title_left.push(Span::styled(speed_text, Style::default().fg(Color::Green)));
-        }
-        
-        if available_width > 35 {
-            title_left.push(Span::raw(" | "));
-            title_left.push(Span::raw(unseen_label));
-            title_left.push(Span::styled(format!("{}", unseen_count), Style::default().fg(Color::LightBlue)));
-        }
+        title_left.push(Span::styled(mode_text, Style::default().fg(Color::Yellow)));
         
         // Calculate padding to right-align help hint
         let left_width = title_left.iter().map(|s| s.content.len()).sum::<usize>();
@@ -489,12 +445,6 @@ impl<'a> UI<'a> {
         
         let text = Text::from(lines);
         
-        let title_suffix = if self.app.reached_end() {
-            " [END]"
-        } else {
-            ""
-        };
-        
         let title_focus = if self.app.focus() == FocusPane::HunkView {
             " [FOCUSED]"
         } else {
@@ -509,11 +459,10 @@ impl<'a> UI<'a> {
         
         let mut paragraph = Paragraph::new(text)
             .block(Block::default().borders(Borders::ALL).title(format!(
-                "{} (Hunk {}/{}{}{})",
+                "{} (Hunk {}/{}{})",
                 file.path.to_string_lossy(),
                 self.app.current_hunk_index() + 1,
                 file.hunks.len(),
-                title_suffix,
                 title_focus
             )).border_style(border_style))
             .scroll((self.app.scroll_offset(), 0));
@@ -532,23 +481,28 @@ impl<'a> UI<'a> {
         let viewport_height = area.height.saturating_sub(2); // Subtract borders
         
         let help_lines = vec![
+            Line::from(Span::styled("Navigation", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
             Line::from("Q: Quit"),
             Line::from("Tab: Focus"),
-            Line::from("Space: Next"),
-            Line::from("Shift+Space: Prev"),
+            Line::from("Space: Next Hunk"),
+            Line::from("Shift+Space: Prev (View)"),
             Line::from("J/K: Scroll/Nav"),
-            Line::from("N/P: File"),
-            Line::from("V: View"),
-            Line::from("M: Mode"),
-            Line::from("W: Wrap"),
-            Line::from("Y: Syntax"),
-            Line::from("H: Hide Help"),
-            Line::from("C: Clear"),
-            Line::from("F: Names"),
-            Line::from("S: Speed"),
+            Line::from("N/P: Next/Prev File"),
+            Line::from(""),
+            Line::from(Span::styled("Modes", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+            Line::from("M: Cycle Mode"),
+            Line::from("  View → Streaming"),
+            Line::from("  (Buffered/Auto)"),
+            Line::from(""),
+            Line::from(Span::styled("Display", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+            Line::from("W: Toggle Wrap"),
+            Line::from("Y: Toggle Syntax"),
+            Line::from("F: Filenames Only"),
+            Line::from("H: Toggle Help"),
+            Line::from(""),
+            Line::from(Span::styled("Staging", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
             Line::from("L: Line Mode"),
-            Line::from("Shift+S: Stage/Unstage"),
-            Line::from("R: Refresh"),
+            Line::from("S: Stage/Unstage"),
         ];
         
         let is_focused = self.app.focus() == FocusPane::HelpSidebar;

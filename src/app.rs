@@ -13,7 +13,7 @@ use std::io::{self, Write};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
-use crate::diff::{DiffSnapshot, FileChange, SeenTracker};
+use crate::diff::{DiffSnapshot, FileChange};
 use crate::git::GitRepo;
 use crate::ui::UI;
 use crate::watcher::FileWatcher;
@@ -30,22 +30,22 @@ fn debug_log(msg: String) {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ViewMode {
-    AllChanges,      // Cycle through current git status (show all hunks)
-    NewChangesOnly,  // Only show new unseen hunks
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum StreamMode {
-    AutoStream,  // Automatically show hunks as they arrive
-    BufferedMore, // Manual "more" mode - press space to see next hunk
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum StreamSpeed {
     Fast,    // 1x multiplier: 0.3s base + 0.2s per change
     Medium,  // 2x multiplier: 0.5s base + 0.5s per change
     Slow,    // 3x multiplier: 0.5s base + 1.0s per change
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum StreamingType {
+    Auto(StreamSpeed),  // Automatically advance with timing based on speed
+    Buffered,           // Manual advance with Space
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Mode {
+    View,                      // View all current changes, full navigation
+    Streaming(StreamingType),  // Stream new hunks as they arrive
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -73,10 +73,7 @@ pub struct App {
     current_snapshot_index: usize,
     current_file_index: usize,
     current_hunk_index: usize,
-    view_mode: ViewMode,
-    mode: StreamMode,
-    speed: StreamSpeed,
-    seen_tracker: SeenTracker,
+    mode: Mode,
     show_filenames_only: bool,
     wrap_lines: bool,
     show_help: bool,
@@ -90,7 +87,8 @@ pub struct App {
     last_auto_advance: Instant,
     scroll_offset: u16,
     help_scroll_offset: u16,
-    reached_end: bool,
+    // Snapshot index when we entered Streaming mode (everything before is "seen")
+    streaming_start_snapshot: Option<usize>,
     _watcher: FileWatcher,
 }
 
@@ -101,13 +99,9 @@ impl App {
         // Get initial snapshot
         let mut initial_snapshot = git_repo.get_diff_snapshot()?;
         
-        // Mark all initial hunks as seen and detect staged lines
-        let mut seen_tracker = SeenTracker::new();
+        // Detect staged lines for initial snapshot
         for file in &mut initial_snapshot.files {
             for hunk in &mut file.hunks {
-                hunk.seen = true;
-                seen_tracker.mark_seen(&hunk.id);
-                
                 // Detect which lines are actually staged in git's index
                 if let Ok(staged_indices) = git_repo.detect_staged_lines(hunk, &file.path) {
                     hunk.staged_line_indices = staged_indices;
@@ -125,10 +119,7 @@ impl App {
             current_snapshot_index: 0,
             current_file_index: 0,
             current_hunk_index: 0,
-            view_mode: ViewMode::NewChangesOnly,
-            mode: StreamMode::AutoStream,
-            speed: StreamSpeed::Fast,
-            seen_tracker,
+            mode: Mode::View,  // Start in View mode
             show_filenames_only: false,
             wrap_lines: false,
             show_help: false,
@@ -141,7 +132,7 @@ impl App {
             last_auto_advance: Instant::now(),
             scroll_offset: 0,
             help_scroll_offset: 0,
-            reached_end: true,  // Start at end since all initial hunks are seen
+            streaming_start_snapshot: None,  // Not in streaming mode initially
             _watcher: watcher,
         };
         
@@ -176,16 +167,9 @@ impl App {
             while let Ok(mut snapshot) = self.snapshot_receiver.try_recv() {
                 debug_log(format!("Received snapshot with {} files", snapshot.files.len()));
                 
-                // Mark hunks as seen/unseen based on SeenTracker
-                let mut has_unseen = false;
+                // Detect staged lines for all hunks
                 for file in &mut snapshot.files {
                     for hunk in &mut file.hunks {
-                        hunk.seen = self.seen_tracker.is_seen(&hunk.id);
-                        if !hunk.seen {
-                            has_unseen = true;
-                            debug_log(format!("Found unseen hunk in {}: {:?}", file.path.display(), hunk.id));
-                        }
-                        
                         // Detect which lines are actually staged in git's index
                         match self.git_repo.detect_staged_lines(hunk, &file.path) {
                             Ok(staged_indices) => {
@@ -201,51 +185,43 @@ impl App {
                     }
                 }
                 
-                debug_log(format!("Snapshot has unseen hunks: {}", has_unseen));
-                
-                // Update the current snapshot's staged line indices if we're viewing it
-                // This ensures the UI updates immediately when external tools stage/unstage
-                if !has_unseen && !self.snapshots.is_empty() {
-                    if let Some(current_snapshot) = self.snapshots.get_mut(self.current_snapshot_index) {
-                        // Sync staged_line_indices from new snapshot to current snapshot
-                        for (file_idx, file) in snapshot.files.iter().enumerate() {
-                            if let Some(current_file) = current_snapshot.files.get_mut(file_idx) {
-                                for (hunk_idx, hunk) in file.hunks.iter().enumerate() {
-                                    if let Some(current_hunk) = current_file.hunks.get_mut(hunk_idx) {
-                                        current_hunk.staged_line_indices = hunk.staged_line_indices.clone();
-                                    }
-                                }
+                match self.mode {
+                    Mode::View => {
+                        // In View mode, update the current snapshot with new staged line info
+                        // Replace the current snapshot entirely with the new one
+                        if !self.snapshots.is_empty() {
+                            self.snapshots[self.current_snapshot_index] = snapshot;
+                            debug_log("Updated current snapshot in View mode".to_string());
+                        }
+                    }
+                    Mode::Streaming(_) => {
+                        // In Streaming mode, only add snapshots that arrived after we entered streaming
+                        // These are "new" changes to stream
+                        self.snapshots.push(snapshot);
+                        debug_log(format!("Added new snapshot in Streaming mode. Total snapshots: {}", self.snapshots.len()));
+                        
+                        // If we're on an empty/old snapshot, advance to the new one
+                        if let Some(start_idx) = self.streaming_start_snapshot {
+                            if self.current_snapshot_index <= start_idx {
+                                self.current_snapshot_index = self.snapshots.len() - 1;
+                                self.current_file_index = 0;
+                                self.current_hunk_index = 0;
+                                debug_log("Advanced to new snapshot in Streaming mode".to_string());
                             }
                         }
-                        debug_log("Updated current snapshot with new staged line indices".to_string());
                     }
-                }
-                
-                self.snapshots.push(snapshot);
-                
-                // If we have new unseen hunks and we were at the end, reset to start streaming
-                if has_unseen && self.reached_end {
-                    debug_log("Resetting from end to stream new hunks".to_string());
-                    self.reached_end = false;
-                    // Switch to the latest snapshot
-                    self.current_snapshot_index = self.snapshots.len() - 1;
-                    self.current_file_index = 0;
-                    self.current_hunk_index = 0;
-                    // Skip to the first unseen hunk
-                    self.skip_to_next_unseen_hunk();
-                    debug_log(format!("Now at file {} hunk {}", self.current_file_index, self.current_hunk_index));
                 }
             }
             
-            // Auto-advance in AutoStream mode
-            if self.mode == StreamMode::AutoStream {
+            // Auto-advance in Streaming Auto mode
+            if let Mode::Streaming(StreamingType::Auto(speed)) = self.mode {
                 let elapsed = self.last_auto_advance.elapsed();
                 // Get current hunk change count (not including context lines) for duration calculation
                 let change_count = self.current_file()
                     .and_then(|f| f.hunks.get(self.current_hunk_index))
                     .map(|h| h.count_changes())
                     .unwrap_or(1); // Default to 1 change if no hunk
-                if elapsed >= self.speed.duration_for_hunk(change_count) {
+                if elapsed >= speed.duration_for_hunk(change_count) {
                     self.advance_hunk();
                     self.last_auto_advance = Instant::now();
                 }
@@ -274,14 +250,38 @@ impl App {
                         KeyCode::Char('q') | KeyCode::Char('Q') => break,
                         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
                         KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                            // Shift+Space goes to previous hunk
-                            self.previous_hunk();
+                            // Shift+Space goes to previous hunk (only in View mode)
+                            if matches!(self.mode, Mode::View) {
+                                self.previous_hunk();
+                            }
                         }
                         KeyCode::Char('m') => {
-                            // Toggle between AutoStream and BufferedMore
+                            // Cycle through modes: View -> Streaming(Buffered) -> Streaming(Auto(Fast)) -> ... -> View
                             self.mode = match self.mode {
-                                StreamMode::AutoStream => StreamMode::BufferedMore,
-                                StreamMode::BufferedMore => StreamMode::AutoStream,
+                                Mode::View => {
+                                    // Entering streaming mode: mark current snapshot as the "seen" baseline
+                                    self.streaming_start_snapshot = Some(self.current_snapshot_index);
+                                    debug_log(format!("Entering Streaming mode, baseline snapshot: {}", self.current_snapshot_index));
+                                    Mode::Streaming(StreamingType::Buffered)
+                                }
+                                Mode::Streaming(StreamingType::Buffered) => {
+                                    Mode::Streaming(StreamingType::Auto(StreamSpeed::Fast))
+                                }
+                                Mode::Streaming(StreamingType::Auto(StreamSpeed::Fast)) => {
+                                    Mode::Streaming(StreamingType::Auto(StreamSpeed::Medium))
+                                }
+                                Mode::Streaming(StreamingType::Auto(StreamSpeed::Medium)) => {
+                                    Mode::Streaming(StreamingType::Auto(StreamSpeed::Slow))
+                                }
+                                Mode::Streaming(StreamingType::Auto(StreamSpeed::Slow)) => {
+                                    // Back to View mode: reset to latest snapshot
+                                    self.streaming_start_snapshot = None;
+                                    self.current_snapshot_index = self.snapshots.len() - 1;
+                                    self.current_file_index = 0;
+                                    self.current_hunk_index = 0;
+                                    debug_log("Exiting Streaming mode, back to View".to_string());
+                                    Mode::View
+                                }
                             };
                             self.last_auto_advance = Instant::now();
                         }
@@ -376,25 +376,9 @@ impl App {
                             // Toggle filenames only
                             self.show_filenames_only = !self.show_filenames_only;
                         }
-                        KeyCode::Char('s') => {
-                            // Cycle through speeds
-                            self.speed = match self.speed {
-                                StreamSpeed::Fast => StreamSpeed::Medium,
-                                StreamSpeed::Medium => StreamSpeed::Slow,
-                                StreamSpeed::Slow => StreamSpeed::Fast,
-                            };
-                        }
-                        KeyCode::Char('S') => {
+                        KeyCode::Char('s') | KeyCode::Char('S') => {
                             // Stage current selection
                             self.stage_current_selection();
-                        }
-                        KeyCode::Char('v') => {
-                            // Toggle view mode
-                            self.view_mode = match self.view_mode {
-                                ViewMode::AllChanges => ViewMode::NewChangesOnly,
-                                ViewMode::NewChangesOnly => ViewMode::AllChanges,
-                            };
-                            self.reached_end = false;
                         }
                         KeyCode::Char('w') => {
                             // Toggle line wrapping
@@ -436,22 +420,6 @@ impl App {
                                 self.focus = FocusPane::HunkView;
                             }
                         }
-                        KeyCode::Char('c') => {
-                            // Clear seen hunks
-                            self.seen_tracker.clear();
-                            self.current_hunk_index = 0;
-                            self.reached_end = false;
-                        }
-                        KeyCode::Char('r') => {
-                            // Refresh - get new snapshot
-                            let snapshot = self.git_repo.get_diff_snapshot()?;
-                            self.snapshots.push(snapshot);
-                            self.current_snapshot_index = self.snapshots.len() - 1;
-                            self.current_file_index = 0;
-                            self.current_hunk_index = 0;
-                            self.scroll_offset = 0;
-                            self.reached_end = false;
-                        }
                         _ => {}
                     }
                 }
@@ -462,63 +430,42 @@ impl App {
     }
     
     fn advance_hunk(&mut self) {
-        // In NewChangesOnly mode, don't advance if we've reached the end
-        if self.view_mode == ViewMode::NewChangesOnly && self.reached_end {
-            return;
-        }
-        
         if self.snapshots.is_empty() {
             return;
         }
         
-        let snapshot = &mut self.snapshots[self.current_snapshot_index];
+        let snapshot = &self.snapshots[self.current_snapshot_index];
         if snapshot.files.is_empty() {
             return;
-        }
-        
-        // Mark current hunk as seen
-        if let Some(file) = snapshot.files.get_mut(self.current_file_index) {
-            if let Some(hunk) = file.hunks.get_mut(self.current_hunk_index) {
-                if !hunk.seen {
-                    hunk.seen = true;
-                    self.seen_tracker.mark_seen(&hunk.id);
-                }
-            }
         }
         
         // Clear line memory for current hunk before moving
         let old_hunk_key = (self.current_file_index, self.current_hunk_index);
         self.hunk_line_memory.remove(&old_hunk_key);
         
-        // Check if we have files before proceeding
-        let snapshot_ref = &self.snapshots[self.current_snapshot_index];
-        if snapshot_ref.files.is_empty() {
+        // Bounds check
+        if self.current_file_index >= snapshot.files.len() {
             return;
         }
         
-        // Bounds check for current file index
-        if self.current_file_index >= snapshot_ref.files.len() {
-            self.current_file_index = 0;
-            return;
-        }
-        
-        // Store the length we need before borrowing
-        let file_hunks_len = snapshot_ref.files[self.current_file_index].hunks.len();
+        let file_hunks_len = snapshot.files[self.current_file_index].hunks.len();
         
         // Advance to next hunk
         self.current_hunk_index += 1;
-        
-        // Reset scroll when advancing to a new hunk
         self.scroll_offset = 0;
-        
-        // In NewChangesOnly mode, skip already-seen hunks
-        if self.view_mode == ViewMode::NewChangesOnly {
-            self.skip_to_next_unseen_hunk();
-        }
         
         // If we've gone past the last hunk in this file, move to next file
         if self.current_hunk_index >= file_hunks_len {
-            self.next_file();
+            self.current_file_index += 1;
+            self.current_hunk_index = 0;
+            
+            // If no more files, stay at the last hunk of the last file
+            if self.current_file_index >= snapshot.files.len() {
+                self.current_file_index = snapshot.files.len().saturating_sub(1);
+                if let Some(last_file) = snapshot.files.get(self.current_file_index) {
+                    self.current_hunk_index = last_file.hunks.len().saturating_sub(1);
+                }
+            }
         }
     }
     
@@ -552,51 +499,6 @@ impl App {
         } else {
             // Just go back one hunk in the current file
             self.current_hunk_index = self.current_hunk_index.saturating_sub(1);
-        }
-        
-        // Clear the reached_end flag when going backwards
-        self.reached_end = false;
-    }
-    
-    fn skip_to_next_unseen_hunk(&mut self) {
-        if self.snapshots.is_empty() {
-            return;
-        }
-        
-        let snapshot = &self.snapshots[self.current_snapshot_index];
-        let total_files = snapshot.files.len();
-        let mut files_checked = 0;
-        
-        // Keep advancing until we find an unseen hunk or run out of hunks/files
-        loop {
-            if self.current_file_index >= snapshot.files.len() {
-                // Wrapped around or exhausted all files
-                self.reached_end = true;
-                break;
-            }
-            
-            let file = &snapshot.files[self.current_file_index];
-            
-            // Check if current hunk is unseen
-            if let Some(hunk) = file.hunks.get(self.current_hunk_index) {
-                if !self.seen_tracker.is_seen(&hunk.id) {
-                    // Found an unseen hunk
-                    return;
-                }
-                // This hunk is seen, try next
-                self.current_hunk_index += 1;
-            } else {
-                // No more hunks in this file, try next file
-                self.current_file_index += 1;
-                self.current_hunk_index = 0;
-                files_checked += 1;
-                
-                // If we've checked all files, we're done
-                if files_checked >= total_files {
-                    self.reached_end = true;
-                    break;
-                }
-            }
         }
     }
     
@@ -915,15 +817,7 @@ impl App {
         self.help_scroll_offset
     }
     
-    pub fn reached_end(&self) -> bool {
-        self.reached_end
-    }
-    
-    pub fn view_mode(&self) -> ViewMode {
-        self.view_mode
-    }
-    
-    pub fn mode(&self) -> StreamMode {
+    pub fn mode(&self) -> Mode {
         self.mode
     }
     
@@ -933,10 +827,6 @@ impl App {
     
     pub fn selected_line_index(&self) -> usize {
         self.selected_line_index
-    }
-    
-    pub fn speed(&self) -> StreamSpeed {
-        self.speed
     }
     
     pub fn focus(&self) -> FocusPane {
@@ -957,17 +847,6 @@ impl App {
     
     pub fn syntax_highlighting(&self) -> bool {
         self.syntax_highlighting
-    }
-    
-    pub fn unseen_hunk_count(&self) -> usize {
-        if let Some(snapshot) = self.current_snapshot() {
-            snapshot.files.iter()
-                .flat_map(|f| &f.hunks)
-                .filter(|h| !self.seen_tracker.is_seen(&h.id))
-                .count()
-        } else {
-            0
-        }
     }
     
     /// Get the height (line count) of the current hunk content
