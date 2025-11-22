@@ -87,8 +87,16 @@ fn should_process_event(event: &Event, repo_path: &Path) -> bool {
     // Filter out events we don't care about
     match event.kind {
         EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
-            // Check if any of the paths are not in .git directory
+            // Check if any of the paths are:
+            // 1. Not in .git directory (working directory changes), OR
+            // 2. The .git/index file specifically (staging changes)
             event.paths.iter().any(|path| {
+                // Check if it's the git index file
+                if path.ends_with(".git/index") {
+                    return true;
+                }
+                
+                // Check if it's a working directory file (not in .git)
                 path.strip_prefix(repo_path)
                     .ok()
                     .and_then(|p| p.components().next())

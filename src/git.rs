@@ -239,6 +239,62 @@ impl GitRepo {
         Ok(())
     }
     
+    /// Detect which lines in a hunk are currently staged in the index
+    /// Returns a HashSet of line indices that are staged
+    pub fn detect_staged_lines(&self, hunk: &Hunk, file_path: &Path) -> Result<std::collections::HashSet<usize>> {
+        use std::collections::HashSet;
+        
+        let repo = Repository::open(&self.repo_path)?;
+        
+        // Get diff from HEAD to index (only staged changes)
+        let head_tree = match repo.head() {
+            Ok(head) => head.peel_to_tree().ok(),
+            Err(_) => None,
+        };
+        
+        let mut diff_opts = DiffOptions::new();
+        diff_opts.pathspec(file_path);
+        
+        let diff = repo.diff_tree_to_index(head_tree.as_ref(), None, Some(&mut diff_opts))?;
+        
+        let mut staged_lines = HashSet::new();
+        
+        // For each hunk in the staged diff, try to match lines with our current hunk
+        use std::cell::RefCell;
+        let result = RefCell::new(Vec::new());
+        
+        diff.foreach(
+            &mut |_, _| true,
+            None,
+            Some(&mut |_, _| true),
+            Some(&mut |_, _, line| {
+                let content = String::from_utf8_lossy(line.content()).to_string();
+                result.borrow_mut().push(format!("{}{}", line.origin(), content));
+                true
+            }),
+        )?;
+        
+        let staged_diff_lines = result.into_inner();
+        
+        // Match lines from the staged diff with lines in our hunk
+        // This is a simple content-based match
+        for (hunk_idx, hunk_line) in hunk.lines.iter().enumerate() {
+            // Only check change lines (+ or -)
+            if (hunk_line.starts_with('+') && !hunk_line.starts_with("+++")) ||
+               (hunk_line.starts_with('-') && !hunk_line.starts_with("---")) {
+                // Check if this line exists in the staged diff
+                if staged_diff_lines.iter().any(|staged_line| {
+                    // Compare content (ignoring line endings)
+                    staged_line.trim_end() == hunk_line.trim_end()
+                }) {
+                    staged_lines.insert(hunk_idx);
+                }
+            }
+        }
+        
+        Ok(staged_lines)
+    }
+    
     /// Stage a single line from a hunk
     pub fn stage_single_line(&self, hunk: &Hunk, line_index: usize, file_path: &Path) -> Result<()> {
         use std::process::Command;

@@ -101,12 +101,17 @@ impl App {
         // Get initial snapshot
         let mut initial_snapshot = git_repo.get_diff_snapshot()?;
         
-        // Mark all initial hunks as seen
+        // Mark all initial hunks as seen and detect staged lines
         let mut seen_tracker = SeenTracker::new();
         for file in &mut initial_snapshot.files {
             for hunk in &mut file.hunks {
                 hunk.seen = true;
                 seen_tracker.mark_seen(&hunk.id);
+                
+                // Detect which lines are actually staged in git's index
+                if let Ok(staged_indices) = git_repo.detect_staged_lines(hunk, &file.path) {
+                    hunk.staged_line_indices = staged_indices;
+                }
             }
         }
         
@@ -180,10 +185,41 @@ impl App {
                             has_unseen = true;
                             debug_log(format!("Found unseen hunk in {}: {:?}", file.path.display(), hunk.id));
                         }
+                        
+                        // Detect which lines are actually staged in git's index
+                        match self.git_repo.detect_staged_lines(hunk, &file.path) {
+                            Ok(staged_indices) => {
+                                hunk.staged_line_indices = staged_indices;
+                                if !hunk.staged_line_indices.is_empty() {
+                                    debug_log(format!("Detected {} staged lines in hunk", hunk.staged_line_indices.len()));
+                                }
+                            }
+                            Err(e) => {
+                                debug_log(format!("Failed to detect staged lines: {}", e));
+                            }
+                        }
                     }
                 }
                 
                 debug_log(format!("Snapshot has unseen hunks: {}", has_unseen));
+                
+                // Update the current snapshot's staged line indices if we're viewing it
+                // This ensures the UI updates immediately when external tools stage/unstage
+                if !has_unseen && !self.snapshots.is_empty() {
+                    if let Some(current_snapshot) = self.snapshots.get_mut(self.current_snapshot_index) {
+                        // Sync staged_line_indices from new snapshot to current snapshot
+                        for (file_idx, file) in snapshot.files.iter().enumerate() {
+                            if let Some(current_file) = current_snapshot.files.get_mut(file_idx) {
+                                for (hunk_idx, hunk) in file.hunks.iter().enumerate() {
+                                    if let Some(current_hunk) = current_file.hunks.get_mut(hunk_idx) {
+                                        current_hunk.staged_line_indices = hunk.staged_line_indices.clone();
+                                    }
+                                }
+                            }
+                        }
+                        debug_log("Updated current snapshot with new staged line indices".to_string());
+                    }
+                }
                 
                 self.snapshots.push(snapshot);
                 
