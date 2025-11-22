@@ -728,8 +728,17 @@ impl App {
                                         let is_staged = hunk.staged_line_indices.contains(&self.selected_line_index);
                                         
                                         if is_staged {
-                                            // TODO: Implement unstaging a single line
-                                            debug_log(format!("Line {} is already staged (unstaging single lines not yet implemented)", self.selected_line_index));
+                                            // Unstage the single line
+                                            match self.git_repo.unstage_single_line(hunk, self.selected_line_index, &file.path) {
+                                                Ok(_) => {
+                                                    // Remove this line from staged indices
+                                                    hunk.staged_line_indices.remove(&self.selected_line_index);
+                                                    debug_log(format!("Unstaged line {} in {}", self.selected_line_index, file.path.display()));
+                                                }
+                                                Err(e) => {
+                                                    debug_log(format!("Failed to unstage line: {}. Note: Line-level unstaging is experimental and may not work for all hunks. Consider unstaging the entire hunk with Shift+U instead.", e));
+                                                }
+                                            }
                                         } else {
                                             // Stage the single line
                                             match self.git_repo.stage_single_line(hunk, self.selected_line_index, &file.path) {

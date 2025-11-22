@@ -374,6 +374,140 @@ impl GitRepo {
         Ok(())
     }
     
+    /// Unstage a single line from a hunk
+    pub fn unstage_single_line(&self, hunk: &Hunk, line_index: usize, file_path: &Path) -> Result<()> {
+        use std::process::Command;
+        use std::io::Write;
+        
+        // Verify the line exists
+        if line_index >= hunk.lines.len() {
+            return Err(anyhow::anyhow!("Line index out of bounds"));
+        }
+        
+        let selected_line = &hunk.lines[line_index];
+        
+        // Only allow unstaging change lines
+        if !((selected_line.starts_with('+') && !selected_line.starts_with("+++")) ||
+             (selected_line.starts_with('-') && !selected_line.starts_with("---"))) {
+            return Err(anyhow::anyhow!("Can only unstage + or - lines"));
+        }
+        
+        // Create a reverse patch to unstage the line
+        // For unstaging, we need to reverse the operation:
+        // - If the line is "+something", we remove it from the index (reverse: "-something")
+        // - If the line is "-something", we add it back to the index (reverse: "+something")
+        
+        let mut patch = String::new();
+        
+        // Diff header
+        patch.push_str(&format!("diff --git a/{} b/{}\n", file_path.display(), file_path.display()));
+        patch.push_str(&format!("--- a/{}\n", file_path.display()));
+        patch.push_str(&format!("+++ b/{}\n", file_path.display()));
+        
+        // Find context lines around the target line
+        let mut context_before = Vec::new();
+        let mut context_after = Vec::new();
+        
+        // Collect context before the selected line
+        let mut i = line_index;
+        while i > 0 && context_before.len() < 3 {
+            i -= 1;
+            let line = &hunk.lines[i];
+            if line.starts_with(' ') {
+                context_before.insert(0, line.clone());
+            } else {
+                break;
+            }
+        }
+        
+        // Collect context after the selected line
+        let mut i = line_index + 1;
+        while i < hunk.lines.len() && context_after.len() < 3 {
+            let line = &hunk.lines[i];
+            if line.starts_with(' ') {
+                context_after.push(line.clone());
+                i += 1;
+            } else {
+                break;
+            }
+        }
+        
+        // For unstaging, we apply the SAME patch as staging but with --reverse flag
+        // Don't manually reverse the line - git apply --reverse will do that
+        
+        // Calculate line numbers for the hunk header
+        let is_addition = selected_line.starts_with('+');
+        let context_before_count = context_before.len();
+        
+        let old_line_count = context_before_count + if is_addition { 0 } else { 1 } + context_after.len();
+        let new_line_count = context_before_count + if is_addition { 1 } else { 0 } + context_after.len();
+        
+        let estimated_old_start = hunk.old_start + line_index - context_before_count;
+        let estimated_new_start = hunk.new_start + line_index - context_before_count;
+        
+        // Write hunk header
+        patch.push_str(&format!("@@ -{},{} +{},{} @@\n",
+            estimated_old_start,
+            old_line_count,
+            estimated_new_start,
+            new_line_count
+        ));
+        
+        // Write context before
+        for line in &context_before {
+            patch.push_str(line);
+            if !line.ends_with('\n') {
+                patch.push('\n');
+            }
+        }
+        
+        // Write the selected line (not reversed - git apply --reverse will handle that)
+        patch.push_str(selected_line);
+        if !selected_line.ends_with('\n') {
+            patch.push('\n');
+        }
+        
+        // Write context after
+        for line in &context_after {
+            patch.push_str(line);
+            if !line.ends_with('\n') {
+                patch.push('\n');
+            }
+        }
+        
+        // Apply the reverse patch to the index using --cached and --reverse
+        let mut child = Command::new("git")
+            .arg("apply")
+            .arg("--cached")
+            .arg("--reverse")
+            .arg("--unidiff-zero")
+            .arg("--allow-overlap")
+            .arg("-")
+            .current_dir(&self.repo_path)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+        
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(patch.as_bytes())?;
+        }
+        
+        let output = child.wait_with_output()?;
+        
+        if !output.status.success() {
+            let error_msg = String::from_utf8_lossy(&output.stderr);
+            let patch_preview = if patch.len() > 500 {
+                format!("{}... (truncated)", &patch[..500])
+            } else {
+                patch.clone()
+            };
+            return Err(anyhow::anyhow!("Failed to unstage line: {}\nPatch was:\n{}", error_msg, patch_preview));
+        }
+        
+        Ok(())
+    }
+    
     /// Unstage an entire file
     pub fn unstage_file(&self, file_path: &Path) -> Result<()> {
         use std::process::Command;
