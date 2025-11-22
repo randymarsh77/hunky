@@ -279,9 +279,20 @@ impl App {
                         KeyCode::Char('q') | KeyCode::Char('Q') => break,
                         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
                         KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                            // Shift+Space goes to previous hunk (only in View mode)
-                            if matches!(self.mode, Mode::View) {
-                                self.previous_hunk();
+                            // Shift+Space goes to previous hunk (works in View and Streaming Buffered)
+                            debug_log(format!("Shift+Space pressed, mode: {:?}", self.mode));
+                            match self.mode {
+                                Mode::View => {
+                                    self.previous_hunk();
+                                }
+                                Mode::Streaming(StreamingType::Buffered) => {
+                                    // In buffered mode, allow going back if there's a previous hunk
+                                    self.previous_hunk();
+                                }
+                                Mode::Streaming(StreamingType::Auto(_)) => {
+                                    // Auto mode doesn't support going back
+                                    debug_log("Auto mode - ignoring Shift+Space".to_string());
+                                }
                             }
                         }
                         KeyCode::Char('m') => {
@@ -318,8 +329,23 @@ impl App {
                             // Advance to next hunk
                             self.advance_hunk();
                         }
+                        KeyCode::Char('b') | KeyCode::Char('B') => {
+                            // 'b' for back - alternative to Shift+Space
+                            debug_log("B key pressed (back)".to_string());
+                            match self.mode {
+                                Mode::View => {
+                                    self.previous_hunk();
+                                }
+                                Mode::Streaming(StreamingType::Buffered) => {
+                                    self.previous_hunk();
+                                }
+                                Mode::Streaming(StreamingType::Auto(_)) => {
+                                    debug_log("Auto mode - ignoring back".to_string());
+                                }
+                            }
+                        }
                         KeyCode::Tab => {
-                            // Cycle focus between panes
+                            // Cycle focus between panes (forward)
                             let old_focus = self.focus;
                             self.focus = match self.focus {
                                 FocusPane::FileList => FocusPane::HunkView,
@@ -344,8 +370,29 @@ impl App {
                             }
                         }
                         KeyCode::BackTab => {
-                            // Shift+Tab also goes back (some terminals map Shift+Space to BackTab)
-                            self.previous_hunk();
+                            // Cycle focus between panes (backward)
+                            let old_focus = self.focus;
+                            self.focus = match self.focus {
+                                FocusPane::FileList => {
+                                    if self.show_help {
+                                        FocusPane::HelpSidebar
+                                    } else {
+                                        FocusPane::HunkView
+                                    }
+                                }
+                                FocusPane::HunkView => FocusPane::FileList,
+                                FocusPane::HelpSidebar => FocusPane::HunkView,
+                            };
+                            
+                            // Exit line mode when leaving hunk view
+                            if old_focus == FocusPane::HunkView && self.focus != FocusPane::HunkView {
+                                if self.line_selection_mode {
+                                    // Save the current line before exiting
+                                    let hunk_key = (self.current_file_index, self.current_hunk_index);
+                                    self.hunk_line_memory.insert(hunk_key, self.selected_line_index);
+                                    self.line_selection_mode = false;
+                                }
+                            }
                         }
                         KeyCode::Char('j') | KeyCode::Down => {
                             if self.show_extended_help {
@@ -524,15 +571,20 @@ impl App {
     }
     
     fn previous_hunk(&mut self) {
+        debug_log("previous_hunk called".to_string());
         if self.snapshots.is_empty() {
+            debug_log("No snapshots, returning".to_string());
             return;
         }
         
         // Check if we have files before proceeding
         let files_len = self.snapshots[self.current_snapshot_index].files.len();
         if files_len == 0 {
+            debug_log("No files in snapshot, returning".to_string());
             return;
         }
+        
+        debug_log(format!("Before: file_idx={}, hunk_idx={}", self.current_file_index, self.current_hunk_index));
         
         // Clear line memory for current hunk before moving
         let old_hunk_key = (self.current_file_index, self.current_hunk_index);
@@ -554,6 +606,8 @@ impl App {
             // Just go back one hunk in the current file
             self.current_hunk_index = self.current_hunk_index.saturating_sub(1);
         }
+        
+        debug_log(format!("After: file_idx={}, hunk_idx={}", self.current_file_index, self.current_hunk_index));
     }
     
     fn next_file(&mut self) {
@@ -1012,7 +1066,7 @@ impl App {
     
     /// Get the height (line count) of the extended help content
     pub fn extended_help_content_height(&self) -> usize {
-        107 // Exact number of lines in draw_extended_help
+        108 // Exact number of lines in draw_extended_help
     }
     
     /// Clamp extended help scroll offset to valid range based on content and viewport height

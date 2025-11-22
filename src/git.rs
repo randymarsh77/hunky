@@ -259,35 +259,48 @@ impl GitRepo {
         
         let mut staged_lines = HashSet::new();
         
-        // For each hunk in the staged diff, try to match lines with our current hunk
+        // Collect all hunks from the staged diff with their line ranges
         use std::cell::RefCell;
-        let result = RefCell::new(Vec::new());
+        let staged_hunks = RefCell::new(Vec::new());
         
         diff.foreach(
             &mut |_, _| true,
             None,
-            Some(&mut |_, _| true),
+            Some(&mut |_, diff_hunk| {
+                // Store the hunk's old_start to identify it
+                staged_hunks.borrow_mut().push((diff_hunk.old_start() as usize, Vec::new()));
+                true
+            }),
             Some(&mut |_, _, line| {
                 let content = String::from_utf8_lossy(line.content()).to_string();
-                result.borrow_mut().push(format!("{}{}", line.origin(), content));
+                let line_str = format!("{}{}", line.origin(), content);
+                
+                // Add to the most recent hunk
+                if let Some(last_hunk) = staged_hunks.borrow_mut().last_mut() {
+                    last_hunk.1.push(line_str);
+                }
                 true
             }),
         )?;
         
-        let staged_diff_lines = result.into_inner();
+        let staged_hunks = staged_hunks.into_inner();
         
-        // Match lines from the staged diff with lines in our hunk
-        // This is a simple content-based match
-        for (hunk_idx, hunk_line) in hunk.lines.iter().enumerate() {
-            // Only check change lines (+ or -)
-            if (hunk_line.starts_with('+') && !hunk_line.starts_with("+++")) ||
-               (hunk_line.starts_with('-') && !hunk_line.starts_with("---")) {
-                // Check if this line exists in the staged diff
-                if staged_diff_lines.iter().any(|staged_line| {
-                    // Compare content (ignoring line endings)
-                    staged_line.trim_end() == hunk_line.trim_end()
-                }) {
-                    staged_lines.insert(hunk_idx);
+        // Find the matching staged hunk by old_start position
+        let matching_staged_hunk = staged_hunks.iter()
+            .find(|(old_start, _)| *old_start == hunk.old_start);
+        
+        if let Some((_, staged_hunk_lines)) = matching_staged_hunk {
+            // Match lines from our hunk with the staged hunk's lines
+            for (hunk_idx, hunk_line) in hunk.lines.iter().enumerate() {
+                // Only check change lines (+ or -)
+                if (hunk_line.starts_with('+') && !hunk_line.starts_with("+++")) ||
+                   (hunk_line.starts_with('-') && !hunk_line.starts_with("---")) {
+                    // Check if this exact line exists in the matching staged hunk
+                    if staged_hunk_lines.iter().any(|staged_line| {
+                        staged_line.trim_end() == hunk_line.trim_end()
+                    }) {
+                        staged_lines.insert(hunk_idx);
+                    }
                 }
             }
         }

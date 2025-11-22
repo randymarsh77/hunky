@@ -194,13 +194,26 @@ impl<'a> UI<'a> {
             };
             
             let hunk_count = file.hunks.len();
-            let unseen_count = file.hunks.iter().filter(|h| !h.seen).count();
             let staged_count = file.hunks.iter().filter(|h| h.staged).count();
             
-            let count_text = if staged_count > 0 {
-                format!(" ({}/{}) [{}✓]", unseen_count, hunk_count, staged_count)
-            } else if unseen_count < hunk_count {
-                format!(" ({}/{})", unseen_count, hunk_count)
+            // Count partially staged hunks
+            let partial_count = file.hunks.iter().filter(|h| {
+                let total_change_lines = h.lines.iter()
+                    .filter(|line| {
+                        (line.starts_with('+') && !line.starts_with("+++")) ||
+                        (line.starts_with('-') && !line.starts_with("---"))
+                    })
+                    .count();
+                let staged_lines = h.staged_line_indices.len();
+                staged_lines > 0 && staged_lines < total_change_lines
+            }).count();
+            
+            let count_text = if staged_count > 0 || partial_count > 0 {
+                if partial_count > 0 {
+                    format!(" ({}) [{}✓ {}⚠]", hunk_count, staged_count, partial_count)
+                } else {
+                    format!(" ({}) [{}✓]", hunk_count, staged_count)
+                }
             } else {
                 format!(" ({})", hunk_count)
             };
@@ -289,14 +302,33 @@ impl<'a> UI<'a> {
         lines.push(Line::from(""));
         
         // Add hunk header with seen and staged indicators
-        let hunk_header = match (hunk.staged, hunk.seen) {
-            (true, true) => format!("@@ -{},{} +{},{} @@ [STAGED ✓] [SEEN]", hunk.old_start, hunk.lines.len(), hunk.new_start, hunk.lines.len()),
-            (true, false) => format!("@@ -{},{} +{},{} @@ [STAGED ✓]", hunk.old_start, hunk.lines.len(), hunk.new_start, hunk.lines.len()),
-            (false, true) => format!("@@ -{},{} +{},{} @@ [SEEN]", hunk.old_start, hunk.lines.len(), hunk.new_start, hunk.lines.len()),
-            (false, false) => format!("@@ -{},{} +{},{} @@", hunk.old_start, hunk.lines.len(), hunk.new_start, hunk.lines.len()),
+        // Check if partially staged
+        let total_change_lines = hunk.lines.iter()
+            .filter(|line| {
+                (line.starts_with('+') && !line.starts_with("+++")) ||
+                (line.starts_with('-') && !line.starts_with("---"))
+            })
+            .count();
+        let staged_lines_count = hunk.staged_line_indices.len();
+        let is_partially_staged = staged_lines_count > 0 && staged_lines_count < total_change_lines;
+        
+        let hunk_header = if is_partially_staged {
+            match hunk.seen {
+                true => format!("@@ -{},{} +{},{} @@ [PARTIAL ⚠] [SEEN]", hunk.old_start, hunk.lines.len(), hunk.new_start, hunk.lines.len()),
+                false => format!("@@ -{},{} +{},{} @@ [PARTIAL ⚠]", hunk.old_start, hunk.lines.len(), hunk.new_start, hunk.lines.len()),
+            }
+        } else {
+            match (hunk.staged, hunk.seen) {
+                (true, true) => format!("@@ -{},{} +{},{} @@ [STAGED ✓] [SEEN]", hunk.old_start, hunk.lines.len(), hunk.new_start, hunk.lines.len()),
+                (true, false) => format!("@@ -{},{} +{},{} @@ [STAGED ✓]", hunk.old_start, hunk.lines.len(), hunk.new_start, hunk.lines.len()),
+                (false, true) => format!("@@ -{},{} +{},{} @@ [SEEN]", hunk.old_start, hunk.lines.len(), hunk.new_start, hunk.lines.len()),
+                (false, false) => format!("@@ -{},{} +{},{} @@", hunk.old_start, hunk.lines.len(), hunk.new_start, hunk.lines.len()),
+            }
         };
         
-        let header_style = if hunk.staged {
+        let header_style = if is_partially_staged {
+            Style::default().fg(Color::Yellow)
+        } else if hunk.staged {
             Style::default().fg(Color::Green)
         } else if hunk.seen {
             Style::default().fg(Color::DarkGray)
@@ -489,9 +521,9 @@ impl<'a> UI<'a> {
         let help_lines = vec![
             Line::from(Span::styled("Navigation", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
             Line::from("Q: Quit"),
-            Line::from("Tab: Focus"),
+            Line::from("Tab/Shift+Tab: Focus"),
             Line::from("Space: Next Hunk"),
-            Line::from("Shift+Space: Prev (View)"),
+            Line::from("B: Prev Hunk"),
             Line::from("J/K: Scroll/Nav"),
             Line::from("N/P: Next/Prev File"),
             Line::from(""),
@@ -574,10 +606,11 @@ impl<'a> UI<'a> {
             Line::from(Span::styled("NAVIGATION", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
             Line::from(""),
             Line::from("  Space           Next hunk (all modes)"),
-            Line::from("  Shift+Space     Previous hunk (View mode only)"),
+            Line::from("  B               Previous hunk (View & Buffered modes)"),
             Line::from("  J/K or ↓/↑      Scroll hunk view or navigate in line mode"),
             Line::from("  N/P             Next/Previous file"),
-            Line::from("  Tab             Cycle focus (File List → Hunk View → Help)"),
+            Line::from("  Tab             Cycle focus forward (File → Hunk → Help)"),
+            Line::from("  Shift+Tab       Cycle focus backward"),
             Line::from(""),
             
             Line::from(Span::styled("STAGING", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
