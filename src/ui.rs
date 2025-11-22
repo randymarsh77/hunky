@@ -382,7 +382,7 @@ impl<'a> UI<'a> {
             if let Some(ref mut highlighter) = file_highlighter {
                 // Apply syntax highlighting with faded colors
                 let highlighted = highlighter.highlight_line(content);
-                let mut spans = vec![Span::raw("  ")];
+                let mut spans = vec![Span::raw("      ")];  // 6 spaces: 4 for indicators + 1 for +/- + 1 space
                 for (color, text) in highlighted {
                     // Make syntax colors darker/faded for context
                     let faded_color = fade_color(color);
@@ -391,7 +391,7 @@ impl<'a> UI<'a> {
                 lines.push(Line::from(spans));
             } else {
                 lines.push(Line::from(Span::styled(
-                    format!("  {}", content),
+                    format!("      {}", content),  // 6 spaces: 4 for indicators + 1 for +/- + 1 space
                     Style::default().fg(Color::DarkGray)
                 )));
             }
@@ -406,7 +406,12 @@ impl<'a> UI<'a> {
         
         for (original_idx, line) in &changes {
             let is_selected = line_selection_mode && *original_idx == selected_line;
-            let selection_marker = if is_selected { "► " } else { "" };
+            let is_staged = hunk.staged_line_indices.contains(original_idx);
+            
+            // Build 4-character indicator prefix: [selection (2)][staged (2)]
+            let selection_marker = if is_selected { "► " } else { "  " };
+            let staged_marker = if is_staged && !hunk.staged { "✓ " } else { "  " };
+            let indicator_prefix = format!("{}{}", selection_marker, staged_marker);
             
             if line.starts_with('+') {
                 let content = line.strip_prefix('+').unwrap_or(line);
@@ -416,7 +421,7 @@ impl<'a> UI<'a> {
                     let bg_color = if is_selected { Color::Indexed(28) } else { Color::Indexed(236) };
                     let fg_color = if is_selected { Color::Indexed(46) } else { Color::Indexed(34) };
                     let mut spans = vec![Span::styled(
-                        format!("{}+ ", selection_marker),
+                        format!("{}+ ", indicator_prefix),
                         Style::default().fg(fg_color).bg(bg_color)
                     )];
                     for (color, text) in highlighted {
@@ -428,7 +433,7 @@ impl<'a> UI<'a> {
                     let bg_color = if is_selected { Color::Indexed(28) } else { Color::Indexed(236) };
                     let fg_color = if is_selected { Color::Indexed(46) } else { Color::Indexed(34) };
                     lines.push(Line::from(Span::styled(
-                        format!("{}+ {}", selection_marker, content),
+                        format!("{}+ {}", indicator_prefix, content),
                         Style::default().fg(fg_color).bg(bg_color)
                     )));
                 }
@@ -440,7 +445,7 @@ impl<'a> UI<'a> {
                     let bg_color = if is_selected { Color::Indexed(52) } else { Color::Indexed(235) };
                     let fg_color = if is_selected { Color::Indexed(196) } else { Color::Indexed(124) };
                     let mut spans = vec![Span::styled(
-                        format!("{}- ", selection_marker),
+                        format!("{}- ", indicator_prefix),
                         Style::default().fg(fg_color).bg(bg_color)
                     )];
                     for (color, text) in highlighted {
@@ -452,7 +457,7 @@ impl<'a> UI<'a> {
                     let bg_color = if is_selected { Color::Indexed(52) } else { Color::Indexed(235) };
                     let fg_color = if is_selected { Color::Indexed(196) } else { Color::Indexed(124) };
                     lines.push(Line::from(Span::styled(
-                        format!("{}- {}", selection_marker, content),
+                        format!("{}- {}", indicator_prefix, content),
                         Style::default().fg(fg_color).bg(bg_color)
                     )));
                 }
@@ -467,7 +472,7 @@ impl<'a> UI<'a> {
             if let Some(ref mut highlighter) = file_highlighter {
                 // Apply syntax highlighting with faded colors
                 let highlighted = highlighter.highlight_line(content);
-                let mut spans = vec![Span::raw("  ")];
+                let mut spans = vec![Span::raw("      ")];  // 6 spaces: 4 for indicators + 1 for +/- + 1 space
                 for (color, text) in highlighted {
                     // Make syntax colors darker/faded for context
                     let faded_color = fade_color(color);
@@ -476,7 +481,7 @@ impl<'a> UI<'a> {
                 lines.push(Line::from(spans));
             } else {
                 lines.push(Line::from(Span::styled(
-                    format!("  {}", content),
+                    format!("      {}", content),  // 6 spaces: 4 for indicators + 1 for +/- + 1 space
                     Style::default().fg(Color::DarkGray)
                 )));
             }

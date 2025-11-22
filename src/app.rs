@@ -724,13 +724,23 @@ impl App {
                                     // Only stage change lines (+ or -)
                                     if (selected_line.starts_with('+') && !selected_line.starts_with("+++")) ||
                                        (selected_line.starts_with('-') && !selected_line.starts_with("---")) {
-                                        // Stage the single line
-                                        match self.git_repo.stage_single_line(hunk, self.selected_line_index, &file.path) {
-                                            Ok(_) => {
-                                                debug_log(format!("Staged line {} in {}", self.selected_line_index, file.path.display()));
-                                            }
-                                            Err(e) => {
-                                                debug_log(format!("Failed to stage line: {}. Note: Line-level staging is experimental and may not work for all hunks. Consider staging the entire hunk with Shift+S instead.", e));
+                                        // Check if line is already staged
+                                        let is_staged = hunk.staged_line_indices.contains(&self.selected_line_index);
+                                        
+                                        if is_staged {
+                                            // TODO: Implement unstaging a single line
+                                            debug_log(format!("Line {} is already staged (unstaging single lines not yet implemented)", self.selected_line_index));
+                                        } else {
+                                            // Stage the single line
+                                            match self.git_repo.stage_single_line(hunk, self.selected_line_index, &file.path) {
+                                                Ok(_) => {
+                                                    // Mark this line as staged
+                                                    hunk.staged_line_indices.insert(self.selected_line_index);
+                                                    debug_log(format!("Staged line {} in {}", self.selected_line_index, file.path.display()));
+                                                }
+                                                Err(e) => {
+                                                    debug_log(format!("Failed to stage line: {}. Note: Line-level staging is experimental and may not work for all hunks. Consider staging the entire hunk with Shift+S instead.", e));
+                                                }
                                             }
                                         }
                                     }
@@ -748,6 +758,7 @@ impl App {
                                     match self.git_repo.unstage_hunk(hunk, &file.path) {
                                         Ok(_) => {
                                             hunk.staged = false;
+                                            hunk.staged_line_indices.clear();
                                             debug_log(format!("Unstaged hunk in {}", file.path.display()));
                                         }
                                         Err(e) => {
@@ -759,6 +770,14 @@ impl App {
                                     match self.git_repo.stage_hunk(hunk, &file.path) {
                                         Ok(_) => {
                                             hunk.staged = true;
+                                            // Mark all change lines as staged
+                                            hunk.staged_line_indices.clear();
+                                            for (idx, line) in hunk.lines.iter().enumerate() {
+                                                if (line.starts_with('+') && !line.starts_with("+++")) ||
+                                                   (line.starts_with('-') && !line.starts_with("---")) {
+                                                    hunk.staged_line_indices.insert(idx);
+                                                }
+                                            }
                                             debug_log(format!("Staged hunk in {}", file.path.display()));
                                         }
                                         Err(e) => {
@@ -785,6 +804,7 @@ impl App {
                                     // Mark all hunks as unstaged
                                     for hunk in &mut file.hunks {
                                         hunk.staged = false;
+                                        hunk.staged_line_indices.clear();
                                     }
                                     debug_log(format!("Unstaged file {}", file.path.display()));
                                 }
@@ -799,6 +819,14 @@ impl App {
                                     // Mark all hunks as staged
                                     for hunk in &mut file.hunks {
                                         hunk.staged = true;
+                                        // Mark all change lines as staged
+                                        hunk.staged_line_indices.clear();
+                                        for (idx, line) in hunk.lines.iter().enumerate() {
+                                            if (line.starts_with('+') && !line.starts_with("+++")) ||
+                                               (line.starts_with('-') && !line.starts_with("---")) {
+                                                hunk.staged_line_indices.insert(idx);
+                                            }
+                                        }
                                     }
                                     debug_log(format!("Staged file {}", file.path.display()));
                                 }

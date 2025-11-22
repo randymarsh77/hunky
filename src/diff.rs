@@ -24,6 +24,8 @@ pub struct Hunk {
     pub lines: Vec<String>,
     pub seen: bool,
     pub staged: bool,
+    /// Track which individual lines are staged (by index in lines vec)
+    pub staged_line_indices: HashSet<usize>,
     pub id: HunkId,
 }
 
@@ -59,6 +61,7 @@ impl Hunk {
             lines,
             seen: false,
             staged: false,
+            staged_line_indices: HashSet::new(),
             id,
         }
     }
