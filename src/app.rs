@@ -89,6 +89,8 @@ pub struct App {
     help_scroll_offset: u16,
     // Snapshot index when we entered Streaming mode (everything before is "seen")
     streaming_start_snapshot: Option<usize>,
+    show_extended_help: bool,
+    extended_help_scroll_offset: u16,
     _watcher: FileWatcher,
 }
 
@@ -133,6 +135,8 @@ impl App {
             scroll_offset: 0,
             help_scroll_offset: 0,
             streaming_start_snapshot: None,  // Not in streaming mode initially
+            show_extended_help: false,
+            extended_help_scroll_offset: 0,
             _watcher: watcher,
         };
         
@@ -242,6 +246,9 @@ impl App {
             if self.show_help {
                 self.clamp_help_scroll_offset(help_viewport_height);
             }
+            if self.show_extended_help {
+                self.clamp_extended_help_scroll_offset(help_viewport_height);
+            }
             
             // Handle input (non-blocking)
             if event::poll(Duration::from_millis(50))? {
@@ -319,46 +326,56 @@ impl App {
                             self.previous_hunk();
                         }
                         KeyCode::Char('j') | KeyCode::Down => {
-                            match self.focus {
-                                FocusPane::FileList => {
-                                    // Navigate to next file and jump to its first hunk
-                                    self.next_file();
-                                    self.scroll_offset = 0;
-                                }
-                                FocusPane::HunkView => {
-                                    if self.line_selection_mode {
-                                        // Navigate to next change line
-                                        self.next_change_line();
-                                    } else {
-                                        // Scroll down in hunk view - increment first, will clamp after draw
-                                        self.scroll_offset = self.scroll_offset.saturating_add(1);
+                            if self.show_extended_help {
+                                // Scroll down in extended help
+                                self.extended_help_scroll_offset = self.extended_help_scroll_offset.saturating_add(1);
+                            } else {
+                                match self.focus {
+                                    FocusPane::FileList => {
+                                        // Navigate to next file and jump to its first hunk
+                                        self.next_file();
+                                        self.scroll_offset = 0;
                                     }
-                                }
-                                FocusPane::HelpSidebar => {
-                                    // Scroll down in help sidebar - increment first, will clamp after draw
-                                    self.help_scroll_offset = self.help_scroll_offset.saturating_add(1);
+                                    FocusPane::HunkView => {
+                                        if self.line_selection_mode {
+                                            // Navigate to next change line
+                                            self.next_change_line();
+                                        } else {
+                                            // Scroll down in hunk view - increment first, will clamp after draw
+                                            self.scroll_offset = self.scroll_offset.saturating_add(1);
+                                        }
+                                    }
+                                    FocusPane::HelpSidebar => {
+                                        // Scroll down in help sidebar - increment first, will clamp after draw
+                                        self.help_scroll_offset = self.help_scroll_offset.saturating_add(1);
+                                    }
                                 }
                             }
                         }
                         KeyCode::Char('k') | KeyCode::Up => {
-                            match self.focus {
-                                FocusPane::FileList => {
-                                    // Navigate to previous file and jump to its first hunk
-                                    self.previous_file();
-                                    self.scroll_offset = 0;
-                                }
-                                FocusPane::HunkView => {
-                                    if self.line_selection_mode {
-                                        // Navigate to previous change line
-                                        self.previous_change_line();
-                                    } else {
-                                        // Scroll up in hunk view
-                                        self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                            if self.show_extended_help {
+                                // Scroll up in extended help
+                                self.extended_help_scroll_offset = self.extended_help_scroll_offset.saturating_sub(1);
+                            } else {
+                                match self.focus {
+                                    FocusPane::FileList => {
+                                        // Navigate to previous file and jump to its first hunk
+                                        self.previous_file();
+                                        self.scroll_offset = 0;
                                     }
-                                }
-                                FocusPane::HelpSidebar => {
-                                    // Scroll up in help sidebar
-                                    self.help_scroll_offset = self.help_scroll_offset.saturating_sub(1);
+                                    FocusPane::HunkView => {
+                                        if self.line_selection_mode {
+                                            // Navigate to previous change line
+                                            self.previous_change_line();
+                                        } else {
+                                            // Scroll up in hunk view
+                                            self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                                        }
+                                    }
+                                    FocusPane::HelpSidebar => {
+                                        // Scroll up in help sidebar
+                                        self.help_scroll_offset = self.help_scroll_offset.saturating_sub(1);
+                                    }
                                 }
                             }
                         }
@@ -377,7 +394,7 @@ impl App {
                             self.show_filenames_only = !self.show_filenames_only;
                         }
                         KeyCode::Char('s') | KeyCode::Char('S') => {
-                            // Stage current selection
+                            // Stage/unstage current selection (smart toggle)
                             self.stage_current_selection();
                         }
                         KeyCode::Char('w') => {
@@ -411,14 +428,29 @@ impl App {
                                 }
                             }
                         }
-                        KeyCode::Char('h') | KeyCode::Char('H') => {
-                            // Toggle help display
+                        KeyCode::Char('h') => {
+                            // Toggle help sidebar
                             self.show_help = !self.show_help;
                             self.help_scroll_offset = 0;
                             // If hiding help and focus was on help sidebar, move focus to hunk view
                             if !self.show_help && self.focus == FocusPane::HelpSidebar {
                                 self.focus = FocusPane::HunkView;
                             }
+                        }
+                        KeyCode::Char('H') => {
+                            // Toggle extended help view
+                            self.show_extended_help = !self.show_extended_help;
+                            self.extended_help_scroll_offset = 0;
+                        }
+                        KeyCode::Esc => {
+                            // Reset to defaults
+                            self.show_extended_help = false;
+                            self.extended_help_scroll_offset = 0;
+                            self.mode = Mode::View;
+                            self.line_selection_mode = false;
+                            self.focus = FocusPane::HunkView;
+                            self.show_help = false;
+                            self.help_scroll_offset = 0;
                         }
                         _ => {}
                     }
@@ -700,20 +732,19 @@ impl App {
                     if let Some(snapshot) = self.snapshots.get_mut(self.current_snapshot_index) {
                         if let Some(file) = snapshot.files.get_mut(self.current_file_index) {
                             if let Some(hunk) = file.hunks.get_mut(self.current_hunk_index) {
-                                if hunk.staged {
-                                    // Unstage the hunk
-                                    match self.git_repo.unstage_hunk(hunk, &file.path) {
-                                        Ok(_) => {
-                                            hunk.staged = false;
-                                            hunk.staged_line_indices.clear();
-                                            debug_log(format!("Unstaged hunk in {}", file.path.display()));
-                                        }
-                                        Err(e) => {
-                                            debug_log(format!("Failed to unstage hunk: {}", e));
-                                        }
-                                    }
-                                } else {
-                                    // Stage the hunk
+                                // Count total change lines and staged lines
+                                let total_change_lines = hunk.lines.iter().enumerate()
+                                    .filter(|(_, line)| {
+                                        (line.starts_with('+') && !line.starts_with("+++")) ||
+                                        (line.starts_with('-') && !line.starts_with("---"))
+                                    })
+                                    .count();
+                                
+                                let staged_lines_count = hunk.staged_line_indices.len();
+                                
+                                // Determine staging state
+                                if staged_lines_count == 0 {
+                                    // Fully unstaged -> Stage everything
                                     match self.git_repo.stage_hunk(hunk, &file.path) {
                                         Ok(_) => {
                                             hunk.staged = true;
@@ -730,6 +761,46 @@ impl App {
                                         Err(e) => {
                                             debug_log(format!("Failed to stage hunk: {}", e));
                                         }
+                                    }
+                                } else if staged_lines_count == total_change_lines {
+                                    // Fully staged -> Unstage everything
+                                    match self.git_repo.unstage_hunk(hunk, &file.path) {
+                                        Ok(_) => {
+                                            hunk.staged = false;
+                                            hunk.staged_line_indices.clear();
+                                            debug_log(format!("Unstaged hunk in {}", file.path.display()));
+                                        }
+                                        Err(e) => {
+                                            debug_log(format!("Failed to unstage hunk: {}", e));
+                                        }
+                                    }
+                                } else {
+                                    // Partially staged -> Stage the remaining unstaged lines
+                                    // Find which lines are not yet staged
+                                    let mut all_staged = true;
+                                    for (idx, line) in hunk.lines.iter().enumerate() {
+                                        if (line.starts_with('+') && !line.starts_with("+++")) ||
+                                           (line.starts_with('-') && !line.starts_with("---")) {
+                                            if !hunk.staged_line_indices.contains(&idx) {
+                                                // Try to stage this line
+                                                match self.git_repo.stage_single_line(hunk, idx, &file.path) {
+                                                    Ok(_) => {
+                                                        hunk.staged_line_indices.insert(idx);
+                                                    }
+                                                    Err(e) => {
+                                                        debug_log(format!("Failed to stage line {}: {}", idx, e));
+                                                        all_staged = false;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    
+                                    if all_staged {
+                                        hunk.staged = true;
+                                        debug_log(format!("Completed staging of partially staged hunk in {}", file.path.display()));
+                                    } else {
+                                        debug_log(format!("Partially completed staging in {}", file.path.display()));
                                     }
                                 }
                             }
@@ -845,6 +916,14 @@ impl App {
         self.show_help
     }
     
+    pub fn show_extended_help(&self) -> bool {
+        self.show_extended_help
+    }
+    
+    pub fn extended_help_scroll_offset(&self) -> u16 {
+        self.extended_help_scroll_offset
+    }
+    
     pub fn syntax_highlighting(&self) -> bool {
         self.syntax_highlighting
     }
@@ -884,7 +963,7 @@ impl App {
     
     /// Get the height (line count) of the help sidebar content
     pub fn help_content_height(&self) -> usize {
-        17 // Number of help lines in draw_help_sidebar
+        26 // Number of help lines in draw_help_sidebar
     }
     
     /// Clamp scroll offset to valid range based on content and viewport height
@@ -906,6 +985,22 @@ impl App {
             self.help_scroll_offset = self.help_scroll_offset.min(max_scroll);
         } else {
             self.help_scroll_offset = 0;
+        }
+    }
+    
+    /// Get the height (line count) of the extended help content
+    pub fn extended_help_content_height(&self) -> usize {
+        107 // Exact number of lines in draw_extended_help
+    }
+    
+    /// Clamp extended help scroll offset to valid range based on content and viewport height
+    pub fn clamp_extended_help_scroll_offset(&mut self, viewport_height: u16) {
+        let content_height = self.extended_help_content_height() as u16;
+        if content_height > viewport_height {
+            let max_scroll = content_height.saturating_sub(viewport_height);
+            self.extended_help_scroll_offset = self.extended_help_scroll_offset.min(max_scroll);
+        } else {
+            self.extended_help_scroll_offset = 0;
         }
     }
 }

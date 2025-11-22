@@ -133,6 +133,12 @@ impl<'a> UI<'a> {
     }
     
     fn draw_main_content(&self, frame: &mut Frame, area: Rect) -> (u16, u16) {
+        // Check if extended help view should be shown
+        if self.app.show_extended_help() {
+            let help_height = self.draw_extended_help(frame, area);
+            return (0, help_height);
+        }
+        
         // Check if help sidebar should be shown
         if self.app.show_help() {
             // Split into 3 columns: file list, diff, help
@@ -366,7 +372,7 @@ impl<'a> UI<'a> {
             
             // Build 4-character indicator prefix: [selection (2)][staged (2)]
             let selection_marker = if is_selected { "► " } else { "  " };
-            let staged_marker = if is_staged && !hunk.staged { "✓ " } else { "  " };
+            let staged_marker = if is_staged { "✓ " } else { "  " };
             let indicator_prefix = format!("{}{}", selection_marker, staged_marker);
             
             if line.starts_with('+') {
@@ -499,10 +505,14 @@ impl<'a> UI<'a> {
             Line::from("Y: Toggle Syntax"),
             Line::from("F: Filenames Only"),
             Line::from("H: Toggle Help"),
+            Line::from("Shift+H: Extended Help"),
             Line::from(""),
             Line::from(Span::styled("Staging", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
             Line::from("L: Line Mode"),
             Line::from("S: Stage/Unstage"),
+            Line::from(""),
+            Line::from(Span::styled("Other", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+            Line::from("ESC: Reset to Defaults"),
         ];
         
         let is_focused = self.app.focus() == FocusPane::HelpSidebar;
@@ -522,4 +532,141 @@ impl<'a> UI<'a> {
         frame.render_widget(help, area);
         viewport_height
     }
+    
+    fn draw_extended_help(&self, frame: &mut Frame, area: Rect) -> u16 {
+        // Return viewport height for clamping
+        let viewport_height = area.height.saturating_sub(2); // Subtract borders
+        
+        let help_content = vec![
+            Line::from(Span::styled("HUNKY - Extended Help", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from(Span::styled("═══════════════════════════════════════════════════════════", Style::default().fg(Color::DarkGray))),
+            Line::from(""),
+            
+            Line::from(Span::styled("OVERVIEW", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+            Line::from("Hunky is a terminal UI for reviewing and staging git changes at the hunk"),
+            Line::from("or line level. It provides two main modes for different workflows:"),
+            Line::from(""),
+            
+            Line::from(Span::styled("MODES", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("View Mode", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::raw(" - Browse all current changes"),
+            ]),
+            Line::from("  • Shows all changes from HEAD to working directory"),
+            Line::from("  • Full navigation with Space (next) and Shift+Space (previous)"),
+            Line::from("  • Ideal for reviewing existing changes before committing"),
+            Line::from("  • Default mode when starting Hunky"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Streaming Mode", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                Span::raw(" - Watch new changes as they appear"),
+            ]),
+            Line::from("  • Only shows hunks that appear after entering this mode"),
+            Line::from("  • Two sub-modes:"),
+            Line::from("    - Buffered: Manual advance with Space key"),
+            Line::from("    - Auto (Fast/Medium/Slow): Automatic advancement with timing"),
+            Line::from("  • Perfect for TDD workflows or watching build output changes"),
+            Line::from("  • Press M to cycle through streaming options"),
+            Line::from(""),
+            
+            Line::from(Span::styled("NAVIGATION", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from("  Space           Next hunk (all modes)"),
+            Line::from("  Shift+Space     Previous hunk (View mode only)"),
+            Line::from("  J/K or ↓/↑      Scroll hunk view or navigate in line mode"),
+            Line::from("  N/P             Next/Previous file"),
+            Line::from("  Tab             Cycle focus (File List → Hunk View → Help)"),
+            Line::from(""),
+            
+            Line::from(Span::styled("STAGING", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from("  S               Smart stage/unstage toggle"),
+            Line::from("  L               Toggle Line Mode for line-level staging"),
+            Line::from(""),
+            Line::from("Smart Toggle Behavior (Hunk Mode):"),
+            Line::from("  • Unstaged → Press S → Fully staged"),
+            Line::from("  • Partially staged → Press S → Fully staged"),
+            Line::from("  • Fully staged → Press S → Fully unstaged"),
+            Line::from(""),
+            Line::from("In Line Mode:"),
+            Line::from("  • Use J/K to navigate between changed lines (+ or -)"),
+            Line::from("  • Press S to toggle staging for the selected line"),
+            Line::from("  • Staged lines show a ✓ indicator"),
+            Line::from("  • External changes (e.g., git add -p) are detected automatically"),
+            Line::from(""),
+            
+            Line::from(Span::styled("DISPLAY OPTIONS", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from("  H               Toggle help sidebar"),
+            Line::from("  Shift+H         Toggle this extended help view"),
+            Line::from("  F               Toggle filenames-only mode (hide diffs)"),
+            Line::from("  W               Toggle line wrapping"),
+            Line::from("  Y               Toggle syntax highlighting"),
+            Line::from(""),
+            
+            Line::from(Span::styled("MODE SWITCHING", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from("  M               Cycle through modes:"),
+            Line::from("                    View → Streaming (Buffered) → Streaming (Auto Fast)"),
+            Line::from("                    → Streaming (Auto Medium) → Streaming (Auto Slow) → View"),
+            Line::from(""),
+            Line::from("When switching to Streaming mode, Hunky captures the current state and"),
+            Line::from("will only show new hunks that appear after the switch."),
+            Line::from(""),
+            
+            Line::from(Span::styled("RESET TO DEFAULTS", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from("  ESC             Reset everything to defaults:"),
+            Line::from("                    • Exit extended help view"),
+            Line::from("                    • Set mode to View"),
+            Line::from("                    • Exit line mode"),
+            Line::from("                    • Focus hunk view"),
+            Line::from("                    • Hide help sidebar"),
+            Line::from(""),
+            
+            Line::from(Span::styled("WORKFLOWS", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Code Review", Style::default().fg(Color::Green)),
+                Span::raw(" - Use View mode to browse all changes, stage what you want"),
+            ]),
+            Line::from("to commit, then run git commit from another terminal."),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("TDD Workflow", Style::default().fg(Color::Magenta)),
+                Span::raw(" - Switch to Streaming (Auto) mode, run tests in"),
+            ]),
+            Line::from("another terminal, and watch test changes flow through Hunky as you"),
+            Line::from("iterate on your code."),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Partial Staging", Style::default().fg(Color::Cyan)),
+                Span::raw(" - Enable Line Mode (L) to stage specific lines"),
+            ]),
+            Line::from("within a hunk. Great for separating formatting changes from logic changes."),
+            Line::from(""),
+            
+            Line::from(Span::styled("═══════════════════════════════════════════════════════════", Style::default().fg(Color::DarkGray))),
+            Line::from(""),
+            Line::from("Press ESC to exit this help view and return to normal operation."),
+            Line::from("Press J/K to scroll through this help."),
+        ];
+        
+        let help = Paragraph::new(help_content)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Cyan))
+                    .title("Extended Help (Shift+H to close, ESC to reset)")
+            )
+            .style(Style::default().fg(Color::White))
+            .wrap(Wrap { trim: false })
+            .scroll((self.app.extended_help_scroll_offset(), 0));
+        
+        frame.render_widget(help, area);
+        viewport_height
+    }
 }
+
