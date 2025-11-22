@@ -107,6 +107,16 @@ impl App {
                 // Detect which lines are actually staged in git's index
                 if let Ok(staged_indices) = git_repo.detect_staged_lines(hunk, &file.path) {
                     hunk.staged_line_indices = staged_indices;
+                    
+                    // Check if all change lines are staged
+                    let total_change_lines = hunk.lines.iter()
+                        .filter(|line| {
+                            (line.starts_with('+') && !line.starts_with("+++")) ||
+                            (line.starts_with('-') && !line.starts_with("---"))
+                        })
+                        .count();
+                    
+                    hunk.staged = hunk.staged_line_indices.len() == total_change_lines && total_change_lines > 0;
                 }
             }
         }
@@ -178,8 +188,20 @@ impl App {
                         match self.git_repo.detect_staged_lines(hunk, &file.path) {
                             Ok(staged_indices) => {
                                 hunk.staged_line_indices = staged_indices;
+                                
+                                // Check if all change lines are staged
+                                let total_change_lines = hunk.lines.iter()
+                                    .filter(|line| {
+                                        (line.starts_with('+') && !line.starts_with("+++")) ||
+                                        (line.starts_with('-') && !line.starts_with("---"))
+                                    })
+                                    .count();
+                                
+                                hunk.staged = hunk.staged_line_indices.len() == total_change_lines && total_change_lines > 0;
+                                
                                 if !hunk.staged_line_indices.is_empty() {
-                                    debug_log(format!("Detected {} staged lines in hunk", hunk.staged_line_indices.len()));
+                                    debug_log(format!("Detected {} staged lines in hunk (total: {}, fully staged: {})", 
+                                        hunk.staged_line_indices.len(), total_change_lines, hunk.staged));
                                 }
                             }
                             Err(e) => {
