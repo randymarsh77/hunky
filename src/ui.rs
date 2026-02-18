@@ -38,7 +38,7 @@ impl<'a> UI<'a> {
         }
     }
     
-    pub fn draw(&self, frame: &mut Frame) -> (u16, u16) {
+    pub fn draw(&self, frame: &mut Frame) -> (u16, u16, u16) {
         // Always use compact layout (no footer)
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -49,10 +49,11 @@ impl<'a> UI<'a> {
             .split(frame.area());
         
         self.draw_header(frame, chunks[0]);
-        let (diff_height, help_height) = self.draw_main_content(frame, chunks[1]);
+        let (diff_height, help_height, file_list_height) = self.draw_main_content(frame, chunks[1]);
         
         // Return viewport heights for clamping scroll offsets
-        (diff_height, help_height)
+        // file_list_height is unused but kept for API compatibility
+        (diff_height, help_height, file_list_height)
     }
     
     fn draw_header(&self, frame: &mut Frame, area: Rect) {
@@ -132,11 +133,11 @@ impl<'a> UI<'a> {
         frame.render_widget(header, area);
     }
     
-    fn draw_main_content(&self, frame: &mut Frame, area: Rect) -> (u16, u16) {
+    fn draw_main_content(&self, frame: &mut Frame, area: Rect) -> (u16, u16, u16) {
         // Check if extended help view should be shown
         if self.app.show_extended_help() {
             let help_height = self.draw_extended_help(frame, area);
-            return (0, help_height);
+            return (0, help_height, 0);
         }
         
         // Check if help sidebar should be shown
@@ -154,7 +155,7 @@ impl<'a> UI<'a> {
             self.draw_file_list(frame, chunks[0]);
             let diff_height = self.draw_diff_content(frame, chunks[1]);
             let help_height = self.draw_help_sidebar(frame, chunks[2]);
-            (diff_height, help_height)
+            (diff_height, help_height, 0)
         } else {
             // No help shown, just file list and diff
             let chunks = Layout::default()
@@ -167,7 +168,7 @@ impl<'a> UI<'a> {
             
             self.draw_file_list(frame, chunks[0]);
             let diff_height = self.draw_diff_content(frame, chunks[1]);
-            (diff_height, 0)
+            (diff_height, 0, 0)
         }
     }
     
@@ -187,7 +188,8 @@ impl<'a> UI<'a> {
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown");
             
-            let style = if idx == self.app.current_file_index() {
+            let is_selected = idx == self.app.current_file_index();
+            let name_style = if is_selected {
                 Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
@@ -219,7 +221,7 @@ impl<'a> UI<'a> {
             };
             
             let content = Line::from(vec![
-                Span::styled(file_name, style),
+                Span::styled(file_name, name_style),
                 Span::styled(count_text, Style::default().fg(Color::DarkGray)),
             ]);
             
@@ -239,10 +241,12 @@ impl<'a> UI<'a> {
         };
         
         let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title(title).border_style(border_style))
-            .highlight_style(Style::default().bg(Color::DarkGray));
+            .block(Block::default().borders(Borders::ALL).title(title).border_style(border_style));
         
-        frame.render_widget(list, area);
+        // Use stateful widget to handle scrolling automatically
+        let mut state = ratatui::widgets::ListState::default();
+        state.select(Some(self.app.current_file_index()));
+        frame.render_stateful_widget(list, area, &mut state);
     }
     
     fn draw_diff_content(&self, frame: &mut Frame, area: Rect) -> u16 {

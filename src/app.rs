@@ -91,6 +91,9 @@ pub struct App {
     streaming_start_snapshot: Option<usize>,
     show_extended_help: bool,
     extended_help_scroll_offset: u16,
+    // Cached viewport heights to prevent scroll flashing
+    last_diff_viewport_height: u16,
+    last_help_viewport_height: u16,
     _watcher: FileWatcher,
 }
 
@@ -147,6 +150,8 @@ impl App {
             streaming_start_snapshot: None,  // Not in streaming mode initially
             show_extended_help: false,
             extended_help_scroll_offset: 0,
+            last_diff_viewport_height: 20,  // Reasonable default
+            last_help_viewport_height: 20,  // Reasonable default
             _watcher: watcher,
         };
         
@@ -258,12 +263,16 @@ impl App {
             let mut help_viewport_height = 0;
             terminal.draw(|f| {
                 let ui = UI::new(self);
-                let (diff_h, help_h) = ui.draw(f);
+                let (diff_h, help_h, _file_list_h) = ui.draw(f);
                 diff_viewport_height = diff_h;
                 help_viewport_height = help_h;
             })?;
             
-            // Clamp scroll offsets after drawing
+            // Cache viewport heights for next frame's pre-clamping
+            self.last_diff_viewport_height = diff_viewport_height;
+            self.last_help_viewport_height = help_viewport_height;
+            
+            // Clamp scroll offsets after drawing (still needed for content size changes)
             self.clamp_scroll_offset(diff_viewport_height);
             if self.show_help {
                 self.clamp_help_scroll_offset(help_viewport_height);
@@ -396,8 +405,15 @@ impl App {
                         }
                         KeyCode::Char('j') | KeyCode::Down => {
                             if self.show_extended_help {
-                                // Scroll down in extended help
-                                self.extended_help_scroll_offset = self.extended_help_scroll_offset.saturating_add(1);
+                                // Scroll down in extended help - pre-clamp to prevent flashing
+                                let content_height = self.extended_help_content_height() as u16;
+                                let viewport_height = self.last_help_viewport_height;
+                                if content_height > viewport_height {
+                                    let max_scroll = content_height.saturating_sub(viewport_height);
+                                    if self.extended_help_scroll_offset < max_scroll {
+                                        self.extended_help_scroll_offset = self.extended_help_scroll_offset.saturating_add(1);
+                                    }
+                                }
                             } else {
                                 match self.focus {
                                     FocusPane::FileList => {
@@ -410,13 +426,27 @@ impl App {
                                             // Navigate to next change line
                                             self.next_change_line();
                                         } else {
-                                            // Scroll down in hunk view - increment first, will clamp after draw
-                                            self.scroll_offset = self.scroll_offset.saturating_add(1);
+                                            // Scroll down in hunk view - pre-clamp to prevent flashing
+                                            let content_height = self.current_hunk_content_height() as u16;
+                                            let viewport_height = self.last_diff_viewport_height;
+                                            if content_height > viewport_height {
+                                                let max_scroll = content_height.saturating_sub(viewport_height);
+                                                if self.scroll_offset < max_scroll {
+                                                    self.scroll_offset = self.scroll_offset.saturating_add(1);
+                                                }
+                                            }
                                         }
                                     }
                                     FocusPane::HelpSidebar => {
-                                        // Scroll down in help sidebar - increment first, will clamp after draw
-                                        self.help_scroll_offset = self.help_scroll_offset.saturating_add(1);
+                                        // Scroll down in help sidebar - pre-clamp to prevent flashing
+                                        let content_height = self.help_content_height() as u16;
+                                        let viewport_height = self.last_help_viewport_height;
+                                        if content_height > viewport_height {
+                                            let max_scroll = content_height.saturating_sub(viewport_height);
+                                            if self.help_scroll_offset < max_scroll {
+                                                self.help_scroll_offset = self.help_scroll_offset.saturating_add(1);
+                                            }
+                                        }
                                     }
                                 }
                             }
