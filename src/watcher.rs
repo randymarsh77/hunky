@@ -117,6 +117,10 @@ mod tests {
     use std::process::Command;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+    const FS_STABILIZATION_DELAY: Duration = Duration::from_millis(700);
+    const WATCHER_RETRY_ATTEMPTS: usize = 3;
+    const WATCHER_RECV_TIMEOUT: Duration = Duration::from_secs(3);
+
     #[test]
     fn processes_working_tree_modifications() {
         let repo_path = PathBuf::from("/tmp/repo");
@@ -211,16 +215,16 @@ mod tests {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let _watcher = FileWatcher::new(git_repo, tx).expect("failed to start watcher");
 
-        tokio::time::sleep(Duration::from_millis(700)).await;
+        tokio::time::sleep(FS_STABILIZATION_DELAY).await;
 
-        for attempt in 0..3 {
+        for attempt in 0..WATCHER_RETRY_ATTEMPTS {
             repo.write_file("tracked.txt", &format!("line 1\nline {}\n", attempt + 2));
-            if let Ok(Some(snapshot)) = tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
+            if let Ok(Some(snapshot)) = tokio::time::timeout(WATCHER_RECV_TIMEOUT, rx.recv()).await {
                 assert!(!snapshot.files.is_empty());
                 assert!(snapshot.files.iter().any(|file| file.path.ends_with("tracked.txt")));
                 return;
             }
-            tokio::time::sleep(Duration::from_millis(700)).await;
+            tokio::time::sleep(FS_STABILIZATION_DELAY).await;
         }
 
         panic!("watcher did not emit a snapshot in time");
