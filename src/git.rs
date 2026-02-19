@@ -787,4 +787,60 @@ mod tests {
         let staged_after = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
         assert!(staged_after.trim().is_empty());
     }
+
+    #[test]
+    fn stage_and_unstage_single_line_tracks_index_changes() {
+        let repo = TestRepo::new();
+        repo.write_file("example.txt", "one\ntwo\nthree\n");
+        repo.commit_all("initial");
+        repo.write_file("example.txt", "one\ntwo-updated\nthree\n");
+
+        let git_repo = GitRepo::new(&repo.path).expect("failed to open test repo");
+        let snapshot = git_repo
+            .get_diff_snapshot()
+            .expect("failed to get diff snapshot");
+        let file_change = snapshot
+            .files
+            .iter()
+            .find(|file| file.path == PathBuf::from("example.txt"))
+            .expect("expected file in diff");
+        let hunk = file_change.hunks.first().expect("expected hunk");
+        let line_index = hunk
+            .lines
+            .iter()
+            .position(|line| line.starts_with('+') && !line.starts_with("+++"))
+            .expect("expected added line");
+
+        git_repo
+            .stage_single_line(hunk, line_index, Path::new("example.txt"))
+            .expect("failed to stage single line");
+        let staged = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
+        assert!(staged.contains("example.txt"));
+
+        git_repo
+            .unstage_single_line(hunk, line_index, Path::new("example.txt"))
+            .expect("failed to unstage single line");
+        let staged_after = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
+        assert!(staged_after.trim().is_empty());
+    }
+
+    #[test]
+    fn diff_snapshot_reports_file_status() {
+        let repo = TestRepo::new();
+        repo.write_file("status.txt", "hello\n");
+        repo.commit_all("initial");
+        repo.write_file("status.txt", "hello world\n");
+
+        let git_repo = GitRepo::new(&repo.path).expect("failed to open test repo");
+        let snapshot = git_repo
+            .get_diff_snapshot()
+            .expect("failed to get diff snapshot");
+        let file = snapshot
+            .files
+            .iter()
+            .find(|f| f.path == PathBuf::from("status.txt"))
+            .expect("expected changed file");
+        assert_eq!(file.status, "Modified");
+        assert!(!file.hunks.is_empty());
+    }
 }
