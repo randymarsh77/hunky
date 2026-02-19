@@ -667,3 +667,124 @@ impl GitRepo {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::process::Command;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct TestRepo {
+        path: PathBuf,
+    }
+
+    impl TestRepo {
+        fn new() -> Self {
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("failed to get system time")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!("hunky-git-tests-{}-{}", std::process::id(), unique));
+
+            fs::create_dir_all(&path).expect("failed to create temp directory");
+
+            run_git(&path, &["init"]);
+            run_git(&path, &["config", "user.name", "Test User"]);
+            run_git(&path, &["config", "user.email", "test@example.com"]);
+
+            Self { path }
+        }
+
+        fn write_file(&self, rel_path: &str, content: &str) {
+            fs::write(self.path.join(rel_path), content).expect("failed to write file");
+        }
+
+        fn commit_all(&self, message: &str) {
+            run_git(&self.path, &["add", "."]);
+            run_git(&self.path, &["commit", "-m", message]);
+        }
+    }
+
+    impl Drop for TestRepo {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn run_git(repo_path: &Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(repo_path)
+            .output()
+            .expect("failed to execute git");
+
+        if !output.status.success() {
+            panic!(
+                "git {:?} failed: {}",
+                args,
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        String::from_utf8_lossy(&output.stdout).to_string()
+    }
+
+    #[test]
+    fn stage_and_unstage_file_updates_index() {
+        let repo = TestRepo::new();
+        repo.write_file("example.txt", "line 1\nline 2\n");
+        repo.commit_all("initial");
+        repo.write_file("example.txt", "line 1\nline 2\nline 3\n");
+
+        let git_repo = GitRepo::new(&repo.path).expect("failed to open test repo");
+        let file_path = Path::new("example.txt");
+
+        git_repo.stage_file(file_path).expect("failed to stage file");
+        let staged = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
+        assert!(staged.contains("example.txt"));
+
+        git_repo
+            .unstage_file(file_path)
+            .expect("failed to unstage file");
+        let staged_after = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
+        assert!(staged_after.trim().is_empty());
+    }
+
+    #[test]
+    fn stage_and_unstage_hunk_updates_index() {
+        let repo = TestRepo::new();
+        repo.write_file("example.txt", "line 1\nline 2\nline 3\n");
+        repo.commit_all("initial");
+        repo.write_file("example.txt", "line 1\nline two updated\nline 3\n");
+
+        let git_repo = GitRepo::new(&repo.path).expect("failed to open test repo");
+        let snapshot = git_repo
+            .get_diff_snapshot()
+            .expect("failed to get diff snapshot");
+        let file_change = snapshot
+            .files
+            .iter()
+            .find(|file| file.path == PathBuf::from("example.txt"))
+            .expect("expected file in diff");
+        let hunk = file_change.hunks.first().expect("expected hunk");
+        let file_path = Path::new("example.txt");
+
+        git_repo
+            .stage_hunk(hunk, file_path)
+            .expect("failed to stage hunk");
+        let staged = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
+        assert!(staged.contains("example.txt"));
+
+        let staged_lines = git_repo
+            .detect_staged_lines(hunk, file_path)
+            .expect("failed to detect staged lines");
+        assert!(!staged_lines.is_empty());
+
+        git_repo
+            .unstage_hunk(hunk, file_path)
+            .expect("failed to unstage hunk");
+        let staged_after = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
+        assert!(staged_after.trim().is_empty());
+    }
+}
