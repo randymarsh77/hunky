@@ -325,12 +325,12 @@
     <p class="section-desc">Choose the installation method that works best for your setup.</p>
 
     <div class="install-tabs" role="tablist">
-      <button class="install-tab active" role="tab" data-tab="nix" aria-selected="true">Nix Flakes</button>
-      <button class="install-tab" role="tab" data-tab="binary" aria-selected="false">Prebuilt Binary</button>
-      <button class="install-tab" role="tab" data-tab="source" aria-selected="false">Build from Source</button>
+      <button class="install-tab active" role="tab" id="tab-nix" data-tab="nix" aria-selected="true" aria-controls="panel-nix">Nix Flakes</button>
+      <button class="install-tab" role="tab" id="tab-binary" data-tab="binary" aria-selected="false" aria-controls="panel-binary" tabindex="-1">Prebuilt Binary</button>
+      <button class="install-tab" role="tab" id="tab-source" data-tab="source" aria-selected="false" aria-controls="panel-source" tabindex="-1">Build from Source</button>
     </div>
 
-    <div class="install-panel active" id="panel-nix" role="tabpanel">
+    <div class="install-panel active" id="panel-nix" role="tabpanel" aria-labelledby="tab-nix">
       <div class="install-code">
         <span class="comment"># Run directly without installing</span><br>
         nix run github:randymarsh77/hunky<br>
@@ -344,7 +344,7 @@
       <p class="install-note">Requires <a href="https://nixos.org/download" target="_blank" rel="noopener">Nix</a> with flakes enabled. This is the recommended install method for reproducible builds.</p>
     </div>
 
-    <div class="install-panel" id="panel-binary" role="tabpanel">
+    <div class="install-panel" id="panel-binary" role="tabpanel" aria-labelledby="tab-binary">
       <div class="install-code">
         <span class="comment"># Download the latest release for your platform</span><br>
         <span class="comment"># from the GitHub Releases page</span><br>
@@ -363,7 +363,7 @@
       <p class="install-note">Check the <a href="https://github.com/randymarsh77/hunky/releases" target="_blank" rel="noopener">Releases page</a> for all available platforms and versions.</p>
     </div>
 
-    <div class="install-panel" id="panel-source" role="tabpanel">
+    <div class="install-panel" id="panel-source" role="tabpanel" aria-labelledby="tab-source">
       <div class="install-code">
         <span class="comment"># Clone the repository</span><br>
         git clone https://github.com/randymarsh77/hunky.git<br>
@@ -426,18 +426,41 @@
 </footer>
 
 <script>
-  document.querySelectorAll('.install-tab').forEach(function(tab) {
-    tab.addEventListener('click', function() {
-      document.querySelectorAll('.install-tab').forEach(function(t) {
-        t.classList.remove('active');
-        t.setAttribute('aria-selected', 'false');
-      });
-      document.querySelectorAll('.install-panel').forEach(function(p) {
-        p.classList.remove('active');
-      });
-      tab.classList.add('active');
-      tab.setAttribute('aria-selected', 'true');
-      document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+  var tabs = Array.from(document.querySelectorAll('.install-tab'));
+
+  function activateTab(tab) {
+    tabs.forEach(function(t) {
+      t.classList.remove('active');
+      t.setAttribute('aria-selected', 'false');
+      t.setAttribute('tabindex', '-1');
+    });
+    document.querySelectorAll('.install-panel').forEach(function(p) {
+      p.classList.remove('active');
+    });
+    tab.classList.add('active');
+    tab.setAttribute('aria-selected', 'true');
+    tab.removeAttribute('tabindex');
+    tab.focus();
+    document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+  }
+
+  tabs.forEach(function(tab) {
+    tab.addEventListener('click', function() { activateTab(tab); });
+    tab.addEventListener('keydown', function(e) {
+      var idx = tabs.indexOf(tab);
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        activateTab(tabs[(idx + 1) % tabs.length]);
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        activateTab(tabs[(idx - 1 + tabs.length) % tabs.length]);
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        activateTab(tabs[0]);
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        activateTab(tabs[tabs.length - 1]);
+      }
     });
   });
 </script>
