@@ -180,4 +180,27 @@ mod tests {
         tracker.clear();
         assert!(!tracker.is_seen(&hunk_id));
     }
+
+    #[test]
+    fn hunk_format_and_constructor_defaults() {
+        let file_path = PathBuf::from("src/main.rs");
+        let lines = vec![" context\n".to_string(), "+added\n".to_string()];
+        let hunk = Hunk::new(4, 7, lines.clone(), &file_path);
+
+        assert_eq!(hunk.format(), lines.concat());
+        assert!(!hunk.seen);
+        assert!(!hunk.staged);
+        assert!(hunk.staged_line_indices.is_empty());
+    }
+
+    #[test]
+    fn seen_tracker_default_is_empty() {
+        let file_path = PathBuf::from("src/default.rs");
+        let hunk_id = HunkId::new(&file_path, 1, 1, &["+x\n".to_string()]);
+        let mut tracker = SeenTracker::default();
+        assert!(!tracker.is_seen(&hunk_id));
+
+        tracker.mark_seen(&hunk_id);
+        assert!(tracker.is_seen(&hunk_id));
+    }
 }

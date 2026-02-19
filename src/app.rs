@@ -1120,7 +1120,10 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
     use std::process::Command;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    static TEST_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     struct TestRepo {
         path: PathBuf,
@@ -1132,10 +1135,12 @@ mod tests {
                 .duration_since(UNIX_EPOCH)
                 .expect("failed to get system time")
                 .as_nanos();
+            let counter = TEST_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
             let path = std::env::temp_dir().join(format!(
-                "hunky-app-tests-{}-{}",
+                "hunky-app-tests-{}-{}-{}",
                 std::process::id(),
-                unique
+                unique,
+                counter
             ));
             fs::create_dir_all(&path).expect("failed to create temp directory");
             run_git(&path, &["init"]);
@@ -1329,6 +1334,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn navigation_and_scroll_helpers_cover_core_branches() {
+        let repo = TestRepo::new();
+        let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+            .await
+            .expect("failed to create app");
+        let mut snapshot = sample_snapshot();
+        snapshot.files[0].hunks[0].lines = vec![
+            " context a\n".to_string(),
+            "-old\n".to_string(),
+            "+new\n".to_string(),
+            " context b\n".to_string(),
+        ];
+        app.snapshots = vec![snapshot];
+        app.current_snapshot_index = 0;
+
+        assert_eq!(
+            StreamSpeed::Fast.duration_for_hunk(2),
+            Duration::from_millis(700)
+        );
+        assert_eq!(
+            StreamSpeed::Medium.duration_for_hunk(1),
+            Duration::from_millis(1000)
+        );
+        assert_eq!(
+            StreamSpeed::Slow.duration_for_hunk(3),
+            Duration::from_millis(3500)
+        );
+
+        app.select_first_change_line();
+        assert_eq!(app.selected_line_index, 1);
+        app.next_change_line();
+        assert_eq!(app.selected_line_index, 2);
+        app.previous_change_line();
+        assert_eq!(app.selected_line_index, 1);
+
+        app.hunk_line_memory.insert((0, 0), 1);
+        app.current_file_index = 0;
+        app.next_file();
+        assert_eq!(app.current_file_index, 1);
+        assert_eq!(app.current_hunk_index, 0);
+        assert!(!app.hunk_line_memory.contains_key(&(0, 0)));
+        app.previous_file();
+        assert_eq!(app.current_file_index, 0);
+
+        app.scroll_offset = 50;
+        app.clamp_scroll_offset(20);
+        assert_eq!(app.scroll_offset, 0);
+        app.help_scroll_offset = 50;
+        app.clamp_help_scroll_offset(10);
+        assert_eq!(app.help_scroll_offset, 16);
+        app.extended_help_scroll_offset = 500;
+        app.clamp_extended_help_scroll_offset(20);
+        assert_eq!(app.extended_help_scroll_offset, 88);
+    }
+
+    #[tokio::test]
     async fn ui_draw_renders_mode_and_help_states() {
         let repo = TestRepo::new();
         let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
@@ -1367,5 +1428,93 @@ mod tests {
             .expect("failed to draw ui");
         let rendered = render_buffer_to_string(&terminal);
         assert!(rendered.contains("Extended Help"));
+    }
+
+    #[tokio::test]
+    async fn stage_current_selection_handles_line_hunk_and_file_modes() {
+        let repo = TestRepo::new();
+        repo.write_file("example.txt", "line 1\nline 2\nline 3\n");
+        repo.commit_all("initial");
+        repo.write_file("example.txt", "line 1\nline two updated\nline 3\n");
+
+        let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+            .await
+            .expect("failed to create app");
+        app.current_snapshot_index = 0;
+        app.current_file_index = 0;
+        app.current_hunk_index = 0;
+        app.focus = FocusPane::HunkView;
+        app.line_selection_mode = true;
+
+        let selected = app.snapshots[0].files[0].hunks[0]
+            .lines
+            .iter()
+            .position(|line| line.starts_with('+') && !line.starts_with("+++"))
+            .expect("expected added line");
+        app.selected_line_index = selected;
+
+        app.stage_current_selection();
+        assert!(app.snapshots[0].files[0].hunks[0]
+            .staged_line_indices
+            .contains(&selected));
+        app.stage_current_selection();
+        assert!(!app.snapshots[0].files[0].hunks[0]
+            .staged_line_indices
+            .contains(&selected));
+
+        app.line_selection_mode = false;
+        app.stage_current_selection();
+        assert!(app.snapshots[0].files[0].hunks[0].staged);
+        app.stage_current_selection();
+        assert!(!app.snapshots[0].files[0].hunks[0].staged);
+
+        app.focus = FocusPane::FileList;
+        app.stage_current_selection();
+        assert!(app.snapshots[0].files[0].hunks.iter().all(|h| h.staged));
+        app.stage_current_selection();
+        assert!(app.snapshots[0].files[0].hunks.iter().all(|h| !h.staged));
+    }
+
+    #[tokio::test]
+    async fn ui_draw_renders_file_list_variants() {
+        let repo = TestRepo::new();
+        repo.write_file("a.txt", "one\n");
+        repo.write_file("b.txt", "two\n");
+        repo.commit_all("initial");
+        repo.write_file("a.txt", "one changed\n");
+        repo.write_file("b.txt", "two changed\n");
+
+        let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+            .await
+            .expect("failed to create app");
+        app.current_snapshot_index = 0;
+        app.current_file_index = 0;
+        app.current_hunk_index = 0;
+        app.mode = Mode::View;
+        app.show_help = true;
+        app.focus = FocusPane::FileList;
+
+        let backend = TestBackend::new(120, 35);
+        let mut terminal = Terminal::new(backend).expect("failed to create terminal");
+        terminal
+            .draw(|frame| {
+                UI::new(&app).draw(frame);
+            })
+            .expect("failed to draw ui");
+        let rendered = render_buffer_to_string(&terminal);
+        assert!(rendered.contains("Files"));
+        assert!(rendered.contains("Help"));
+
+        app.show_filenames_only = true;
+        app.wrap_lines = true;
+        app.line_selection_mode = true;
+        app.select_first_change_line();
+        terminal
+            .draw(|frame| {
+                UI::new(&app).draw(frame);
+            })
+            .expect("failed to draw ui");
+        let rendered = render_buffer_to_string(&terminal);
+        assert!(rendered.contains("File Info"));
     }
 }
