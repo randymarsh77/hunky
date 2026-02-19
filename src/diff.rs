@@ -131,3 +131,53 @@ impl Default for SeenTracker {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn count_changes_pairs_adds_and_removes() {
+        let file_path = PathBuf::from("src/main.rs");
+        let hunk = Hunk::new(
+            1,
+            1,
+            vec![
+                "-old line\n".to_string(),
+                "+new line\n".to_string(),
+                "+extra line\n".to_string(),
+            ],
+            &file_path,
+        );
+
+        assert_eq!(hunk.count_changes(), 2);
+    }
+
+    #[test]
+    fn hunk_id_changes_when_content_changes() {
+        let file_path = PathBuf::from("src/main.rs");
+        let base = HunkId::new(&file_path, 10, 10, &["-a\n".to_string(), "+b\n".to_string()]);
+        let changed =
+            HunkId::new(&file_path, 10, 10, &["-a\n".to_string(), "+c\n".to_string()]);
+
+        assert_ne!(base, changed);
+    }
+
+    #[test]
+    fn seen_tracker_marks_and_clears_hunks() {
+        let file_path = PathBuf::from("src/lib.rs");
+        let hunk_id = HunkId::new(&file_path, 3, 3, &["+line\n".to_string()]);
+        let mut tracker = SeenTracker::new();
+
+        assert!(!tracker.is_seen(&hunk_id));
+        tracker.mark_seen(&hunk_id);
+        assert!(tracker.is_seen(&hunk_id));
+
+        tracker.remove_file_hunks(&file_path);
+        assert!(!tracker.is_seen(&hunk_id));
+
+        tracker.mark_seen(&hunk_id);
+        tracker.clear();
+        assert!(!tracker.is_seen(&hunk_id));
+    }
+}

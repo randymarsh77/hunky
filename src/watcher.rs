@@ -107,3 +107,42 @@ fn should_process_event(event: &Event, repo_path: &Path) -> bool {
         _ => false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use notify::{event::{CreateKind, ModifyKind, RemoveKind}, EventKind};
+    use std::path::PathBuf;
+
+    #[test]
+    fn processes_working_tree_modifications() {
+        let repo_path = PathBuf::from("/tmp/repo");
+        let event = Event::new(EventKind::Modify(ModifyKind::Any))
+            .add_path(repo_path.join("src/main.rs"));
+
+        assert!(should_process_event(&event, &repo_path));
+    }
+
+    #[test]
+    fn ignores_git_directory_changes_except_index() {
+        let repo_path = PathBuf::from("/tmp/repo");
+        let git_object_event = Event::new(EventKind::Create(CreateKind::Any))
+            .add_path(repo_path.join(".git/objects/ab/cdef"));
+        let index_event =
+            Event::new(EventKind::Modify(ModifyKind::Any)).add_path(repo_path.join(".git/index"));
+
+        assert!(!should_process_event(&git_object_event, &repo_path));
+        assert!(should_process_event(&index_event, &repo_path));
+    }
+
+    #[test]
+    fn ignores_non_create_modify_remove_events() {
+        let repo_path = PathBuf::from("/tmp/repo");
+        let event =
+            Event::new(EventKind::Remove(RemoveKind::Any)).add_path(repo_path.join("README.md"));
+        assert!(should_process_event(&event, &repo_path));
+
+        let access_event = Event::new(EventKind::Any).add_path(repo_path.join("README.md"));
+        assert!(!should_process_event(&access_event, &repo_path));
+    }
+}
