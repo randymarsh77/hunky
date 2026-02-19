@@ -187,6 +187,22 @@ cargo build
 cargo test
 ```
 
+### Coverage
+
+```bash
+# Install coverage tooling once
+cargo install cargo-llvm-cov --locked
+
+# Summary report
+cargo cov
+
+# LCOV output for CI tooling
+cargo cov-lcov
+
+# HTML report (opens target/llvm-cov/html/index.html)
+cargo cov-html
+```
+
 ### Running in Development Mode
 
 ```bash

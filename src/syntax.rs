@@ -98,3 +98,30 @@ impl Default for SyntaxHighlighter {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn detect_language_for_rust_file() {
+        let highlighter = SyntaxHighlighter::new();
+        let language = highlighter.detect_language(Path::new("example.rs"));
+        assert_eq!(language.as_deref(), Some("Rust"));
+    }
+
+    #[test]
+    fn highlight_line_returns_colored_segments() {
+        let highlighter = SyntaxHighlighter::new();
+        let mut file_highlighter = highlighter.create_highlighter(Path::new("example.rs"));
+        let highlighted = file_highlighter.highlight_line("fn main() {}\n");
+        assert!(!highlighted.is_empty());
+    }
+
+    #[test]
+    fn rgb_to_ansi256_maps_grayscale_and_color_cube() {
+        assert_eq!(rgb_to_ansi256(128, 128, 128), Color::Indexed(243));
+        assert_eq!(rgb_to_ansi256(255, 0, 0), Color::Indexed(196));
+    }
+}
