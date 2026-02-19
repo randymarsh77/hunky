@@ -9,3 +9,9 @@ test-repo/
 
 # Nix
 .direnv/
+
+# Site
+site/node_modules/
+site/build/
+site/.docusaurus/
+site/.cache-loader/
