@@ -60,7 +60,7 @@ jobs:
       id-token: write
       pull-requests: write
     environment:
-      name: github-pages
+      name: ${{ github.event_name == 'pull_request' && 'github-pages-preview' || 'github-pages' }}
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
