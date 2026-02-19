@@ -683,7 +683,7 @@ mod tests {
         fn new() -> Self {
             let unique = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .expect("system time before unix epoch")
+                .expect("failed to get system time")
                 .as_nanos();
             let path = std::env::temp_dir().join(format!("hunky-git-tests-{}-{}", std::process::id(), unique));
 
