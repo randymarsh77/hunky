@@ -1519,7 +1519,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn covers_navigation_edge_cases_and_noop_paths() {
+    async fn navigation_handles_empty_and_boundary_states() {
         let repo = TestRepo::new();
         let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
             .await
@@ -1600,7 +1600,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ui_draw_covers_additional_layout_and_diff_branches() {
+    async fn ui_draw_renders_mini_compact_help_and_empty_states() {
         let repo = TestRepo::new();
         repo.write_file("example.rs", "fn main() {\n    println!(\"one\");\n}\n");
         repo.commit_all("initial");
@@ -1630,7 +1630,7 @@ mod tests {
             })
             .expect("failed to draw compact layout");
         let rendered = render_buffer_to_string(&terminal);
-        assert!(rendered.contains("STM:M") || rendered.contains("STREAM (Med)"));
+        assert!(rendered.contains("STM:M"));
 
         app.show_help = true;
         app.focus = FocusPane::HelpSidebar;
