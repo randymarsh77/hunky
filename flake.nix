@@ -27,8 +27,25 @@
             "rust-analyzer"
           ];
         };
+        hunkyPackage = pkgs.rustPlatform.buildRustPackage {
+          pname = "hunky";
+          version = "0.1.0";
+          src = ./.;
+          cargoLock.lockFile = ./Cargo.lock;
+          nativeBuildInputs = with pkgs; [ pkg-config ];
+          buildInputs = with pkgs; [ openssl ];
+        };
       in
       {
+        packages = {
+          default = hunkyPackage;
+          hunky = hunkyPackage;
+        };
+
+        apps.default = flake-utils.lib.mkApp {
+          drv = hunkyPackage;
+        };
+
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
             rustToolchain
