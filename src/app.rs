@@ -1517,4 +1517,160 @@ mod tests {
         let rendered = render_buffer_to_string(&terminal);
         assert!(rendered.contains("File Info"));
     }
+
+    #[tokio::test]
+    async fn covers_navigation_edge_cases_and_noop_paths() {
+        let repo = TestRepo::new();
+        let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+            .await
+            .expect("failed to create app");
+
+        app.snapshots.clear();
+        app.advance_hunk();
+        app.previous_hunk();
+        app.next_file();
+        app.previous_file();
+
+        app.snapshots = vec![DiffSnapshot {
+            timestamp: SystemTime::now(),
+            files: vec![],
+        }];
+        app.current_snapshot_index = 0;
+        app.advance_hunk();
+        app.previous_hunk();
+        app.next_file();
+        app.previous_file();
+
+        let mut snapshot = sample_snapshot();
+        snapshot.files[0].hunks[0].lines = vec![
+            " context before\n".to_string(),
+            "-old\n".to_string(),
+            "+new\n".to_string(),
+            " context after\n".to_string(),
+        ];
+        app.snapshots = vec![snapshot];
+        app.current_snapshot_index = 0;
+        app.current_file_index = 0;
+        app.current_hunk_index = 0;
+
+        app.selected_line_index = 0;
+        app.next_change_line();
+        assert_eq!(app.selected_line_index, 1);
+        app.selected_line_index = 2;
+        app.next_change_line();
+        assert_eq!(app.selected_line_index, 2);
+
+        app.selected_line_index = 0;
+        app.previous_change_line();
+        assert_eq!(app.selected_line_index, 2);
+        app.selected_line_index = 1;
+        app.previous_change_line();
+        assert_eq!(app.selected_line_index, 1);
+
+        app.snapshots[0].files[0].hunks[0].lines = vec![" context only\n".to_string()];
+        app.selected_line_index = 9;
+        app.select_first_change_line();
+        assert_eq!(app.selected_line_index, 0);
+
+        app.focus = FocusPane::HelpSidebar;
+        app.stage_current_selection();
+
+        app.current_file_index = 99;
+        assert_eq!(app.current_hunk_content_height(), 0);
+
+        app.snapshots[0].files[0].hunks[0].lines = vec![
+            "-old\n".to_string(),
+            "+new\n".to_string(),
+            " context after 1\n".to_string(),
+            " context after 2\n".to_string(),
+            " context after 3\n".to_string(),
+            " context after 4\n".to_string(),
+            " context after 5\n".to_string(),
+            " context after 6\n".to_string(),
+        ];
+        app.current_file_index = 0;
+        app.current_hunk_index = 0;
+        app.scroll_offset = 99;
+        app.clamp_scroll_offset(5);
+        assert!(app.scroll_offset > 0);
+
+        app.extended_help_scroll_offset = 20;
+        app.clamp_extended_help_scroll_offset(200);
+        assert_eq!(app.extended_help_scroll_offset, 0);
+    }
+
+    #[tokio::test]
+    async fn ui_draw_covers_additional_layout_and_diff_branches() {
+        let repo = TestRepo::new();
+        repo.write_file("example.rs", "fn main() {\n    println!(\"one\");\n}\n");
+        repo.commit_all("initial");
+        repo.write_file(
+            "example.rs",
+            "fn main() {\n    println!(\"two\");\n    println!(\"three\");\n}\n",
+        );
+
+        let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+            .await
+            .expect("failed to create app");
+
+        let mut terminal = Terminal::new(TestBackend::new(36, 20)).expect("failed to create terminal");
+        terminal
+            .draw(|frame| {
+                UI::new(&app).draw(frame);
+            })
+            .expect("failed to draw mini layout");
+        let rendered = render_buffer_to_string(&terminal);
+        assert!(rendered.contains("Hunky"));
+
+        app.mode = Mode::Streaming(StreamingType::Auto(StreamSpeed::Medium));
+        terminal = Terminal::new(TestBackend::new(52, 20)).expect("failed to create terminal");
+        terminal
+            .draw(|frame| {
+                UI::new(&app).draw(frame);
+            })
+            .expect("failed to draw compact layout");
+        let rendered = render_buffer_to_string(&terminal);
+        assert!(rendered.contains("STM:M") || rendered.contains("STREAM (Med)"));
+
+        app.show_help = true;
+        app.focus = FocusPane::HelpSidebar;
+        terminal = Terminal::new(TestBackend::new(90, 24)).expect("failed to create terminal");
+        terminal
+            .draw(|frame| {
+                UI::new(&app).draw(frame);
+            })
+            .expect("failed to draw focused help");
+        let rendered = render_buffer_to_string(&terminal);
+        assert!(rendered.contains("Keys [FOCUSED]"));
+
+        app.syntax_highlighting = false;
+        app.wrap_lines = true;
+        terminal
+            .draw(|frame| {
+                UI::new(&app).draw(frame);
+            })
+            .expect("failed to draw non-highlighted wrapped diff");
+        let rendered = render_buffer_to_string(&terminal);
+        assert!(rendered.contains("+ "));
+
+        app.snapshots[0].files[0].hunks.clear();
+        app.show_help = false;
+        app.focus = FocusPane::HunkView;
+        terminal
+            .draw(|frame| {
+                UI::new(&app).draw(frame);
+            })
+            .expect("failed to draw no-hunks state");
+        let rendered = render_buffer_to_string(&terminal);
+        assert!(rendered.contains("No hunks to display yet"));
+
+        app.snapshots.clear();
+        terminal
+            .draw(|frame| {
+                UI::new(&app).draw(frame);
+            })
+            .expect("failed to draw no-snapshot state");
+        let rendered = render_buffer_to_string(&terminal);
+        assert!(rendered.contains("No changes"));
+    }
 }

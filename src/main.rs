@@ -49,6 +49,12 @@ mod tests {
     }
 
     #[test]
+    fn parses_short_repo_argument() {
+        let args = Args::try_parse_from(["hunky", "-r", "/tmp/short"]).expect("args should parse");
+        assert_eq!(args.repo, "/tmp/short");
+    }
+
+    #[test]
     fn help_text_mentions_tui_description() {
         let mut help = Vec::new();
         Args::command()
@@ -56,5 +62,10 @@ mod tests {
             .expect("help should render");
         let help = String::from_utf8(help).expect("help should be utf-8");
         assert!(help.contains("A TUI for streaming git changes in real-time"));
+    }
+
+    #[test]
+    fn unknown_argument_returns_error() {
+        assert!(Args::try_parse_from(["hunky", "--unknown"]).is_err());
     }
 }
