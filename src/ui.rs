@@ -714,7 +714,10 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
     use std::process::Command;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    static TEST_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     fn render_buffer_to_string(terminal: &Terminal<TestBackend>) -> String {
         let buffer = terminal.backend().buffer();
@@ -741,7 +744,13 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("failed to get system time")
             .as_nanos();
-        let path = std::env::temp_dir().join(format!("hunky-ui-tests-{}-{}", std::process::id(), unique));
+        let counter = TEST_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "hunky-ui-tests-{}-{}-{}",
+            std::process::id(),
+            unique,
+            counter
+        ));
 
         fs::create_dir_all(&path).expect("failed to create temp directory");
         let output = Command::new("git")
@@ -774,7 +783,7 @@ mod tests {
         assert!(rendered.contains("Hunky"));
         assert!(rendered.contains("Files"));
 
-        let _ = fs::remove_dir_all(repo_path);
+        fs::remove_dir_all(repo_path).expect("failed to remove temp repo");
     }
 
     #[test]
