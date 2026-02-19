@@ -22,10 +22,10 @@
 - [x] Add CI coverage job that always produces a coverage report artifact
 - [x] Add focused unit tests for pure logic modules (`diff`, `syntax`, `watcher`)
 - [x] Add TUI integration test via ASCII buffer capture (`ratatui::TestBackend`)
-- [ ] Expand `app.rs` behavior tests (mode transitions, navigation, staging toggles)
-- [ ] Expand `ui.rs` rendering assertions across modes/layout widths/help states
-- [ ] Add integration tests for watcher event loop + snapshot dispatch behavior
-- [ ] Add `main.rs` smoke/integration tests for CLI argument behavior
+- [x] Expand `app.rs` behavior tests (mode transitions, navigation, staging toggles)
+- [x] Expand `ui.rs` rendering assertions across modes/layout widths/help states
+- [x] Add integration tests for watcher event loop + snapshot dispatch behavior
+- [x] Add `main.rs` smoke/integration tests for CLI argument behavior
 - [ ] Introduce phased CI enforcement (`--fail-under-lines`) and raise threshold to 100%
 
 ## Notes on 100% goal
