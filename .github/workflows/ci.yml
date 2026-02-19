@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  build-test-run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Build
+        run: nix develop --accept-flake-config --command cargo build --locked
+
+      - name: Test
+        run: nix develop --accept-flake-config --command cargo test --locked
+
+      - name: Run smoke check
+        run: nix develop --accept-flake-config --command cargo run --locked -- --help
