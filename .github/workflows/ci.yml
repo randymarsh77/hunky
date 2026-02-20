@@ -34,6 +34,12 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             archive: hunky-x86_64-unknown-linux-gnu.tar.gz
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            archive: hunky-aarch64-unknown-linux-gnu.tar.gz
+          - os: macos-13
+            target: x86_64-apple-darwin
+            archive: hunky-x86_64-apple-darwin.tar.gz
           - os: macos-14
             target: aarch64-apple-darwin
             archive: hunky-aarch64-apple-darwin.tar.gz
