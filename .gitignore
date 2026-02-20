@@ -6,6 +6,8 @@ test-repo/
 
 # Logs
 *debug.log
+*.log
+
 
 # Nix
 .direnv/
