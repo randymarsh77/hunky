@@ -1,3 +1,6 @@
 name = "hunky"
 compatibility_date = "2026-02-20"
 pages_build_output_dir = "landing"
+
+[assets]
+directory = "landing"
