@@ -5,3 +5,4 @@ pages_build_output_dir = "landing"
 
 [assets]
 directory = "landing"
+binding = "ASSETS"
