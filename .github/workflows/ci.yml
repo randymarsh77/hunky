@@ -27,6 +27,44 @@ jobs:
       - name: Run smoke check
         run: nix develop --accept-flake-config --command cargo run --locked -- --help
 
+  release-builds:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: hunky-x86_64-unknown-linux-gnu.tar.gz
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            archive: hunky-aarch64-unknown-linux-gnu.tar.gz
+          - os: macos-13
+            target: x86_64-apple-darwin
+            archive: hunky-x86_64-apple-darwin.tar.gz
+          - os: macos-14
+            target: aarch64-apple-darwin
+            archive: hunky-aarch64-apple-darwin.tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package release artifact
+        run: tar -czf "${{ matrix.archive }}" -C "target/${{ matrix.target }}/release" hunky
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive }}
+          path: ${{ matrix.archive }}
+
   coverage:
     runs-on: ubuntu-latest
     steps:
@@ -47,6 +85,55 @@ jobs:
         with:
           name: coverage-lcov
           path: lcov.info
+
+  publish-release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: release-builds
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read release version
+        id: version
+        run: echo "value=$(head -n 1 version.txt | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Check if release exists
+        id: release_check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = `v${{ steps.version.outputs.value }}`;
+            try {
+              await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag,
+              });
+              core.setOutput("exists", "true");
+            } catch (error) {
+              if (error.status === 404) {
+                core.setOutput("exists", "false");
+                return;
+              }
+              throw error;
+            }
+
+      - name: Download release artifacts
+        if: steps.release_check.outputs.exists == 'false'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: hunky-*.tar.gz
+          merge-multiple: true
+
+      - name: Publish GitHub release
+        if: steps.release_check.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.value }}
+          files: hunky-*.tar.gz
 
   deploy-site:
     if: |
