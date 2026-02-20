@@ -787,6 +787,8 @@ impl App {
     }
     
     fn stage_current_selection(&mut self) {
+        let mut refresh_needed = false;
+
         match self.focus {
             FocusPane::HunkView => {
                 // Check if we're in line selection mode
@@ -810,6 +812,7 @@ impl App {
                                                     // Remove this line from staged indices
                                                     hunk.staged_line_indices.remove(&self.selected_line_index);
                                                     debug_log(format!("Unstaged line {} in {}", self.selected_line_index, file.path.display()));
+                                                    refresh_needed = true;
                                                 }
                                                 Err(e) => {
                                                     debug_log(format!("Failed to unstage line: {}. Note: Line-level unstaging is experimental and may not work for all hunks. Consider unstaging the entire hunk with Shift+U instead.", e));
@@ -822,6 +825,7 @@ impl App {
                                                     // Mark this line as staged
                                                     hunk.staged_line_indices.insert(self.selected_line_index);
                                                     debug_log(format!("Staged line {} in {}", self.selected_line_index, file.path.display()));
+                                                    refresh_needed = true;
                                                 }
                                                 Err(e) => {
                                                     debug_log(format!("Failed to stage line: {}. Note: Line-level staging is experimental and may not work for all hunks. Consider staging the entire hunk with Shift+S instead.", e));
@@ -863,6 +867,7 @@ impl App {
                                                 }
                                             }
                                             debug_log(format!("Staged hunk in {}", file.path.display()));
+                                            refresh_needed = true;
                                         }
                                         Err(e) => {
                                             debug_log(format!("Failed to stage hunk: {}", e));
@@ -875,6 +880,7 @@ impl App {
                                             hunk.staged = false;
                                             hunk.staged_line_indices.clear();
                                             debug_log(format!("Unstaged hunk in {}", file.path.display()));
+                                            refresh_needed = true;
                                         }
                                         Err(e) => {
                                             debug_log(format!("Failed to unstage hunk: {}", e));
@@ -892,6 +898,7 @@ impl App {
                                                 match self.git_repo.stage_single_line(hunk, idx, &file.path) {
                                                     Ok(_) => {
                                                         hunk.staged_line_indices.insert(idx);
+                                                        refresh_needed = true;
                                                     }
                                                     Err(e) => {
                                                         debug_log(format!("Failed to stage line {}: {}", idx, e));
@@ -931,6 +938,7 @@ impl App {
                                         hunk.staged_line_indices.clear();
                                     }
                                     debug_log(format!("Unstaged file {}", file.path.display()));
+                                    refresh_needed = true;
                                 }
                                 Err(e) => {
                                     debug_log(format!("Failed to unstage file: {}", e));
@@ -953,6 +961,7 @@ impl App {
                                         }
                                     }
                                     debug_log(format!("Staged file {}", file.path.display()));
+                                    refresh_needed = true;
                                 }
                                 Err(e) => {
                                     debug_log(format!("Failed to stage file: {}", e));
@@ -964,6 +973,87 @@ impl App {
             }
             FocusPane::HelpSidebar => {
                 // No staging action for help sidebar
+            }
+        }
+
+        if refresh_needed {
+            self.refresh_current_snapshot_from_git();
+        }
+    }
+
+    fn annotate_staged_lines(&self, snapshot: &mut DiffSnapshot) {
+        for file in &mut snapshot.files {
+            for hunk in &mut file.hunks {
+                match self.git_repo.detect_staged_lines(hunk, &file.path) {
+                    Ok(staged_indices) => {
+                        hunk.staged_line_indices = staged_indices;
+
+                        let total_change_lines = hunk
+                            .lines
+                            .iter()
+                            .filter(|line| {
+                                (line.starts_with('+') && !line.starts_with("+++"))
+                                    || (line.starts_with('-') && !line.starts_with("---"))
+                            })
+                            .count();
+
+                        hunk.staged = hunk.staged_line_indices.len() == total_change_lines
+                            && total_change_lines > 0;
+                    }
+                    Err(e) => {
+                        debug_log(format!("Failed to detect staged lines: {}", e));
+                    }
+                }
+            }
+        }
+    }
+
+    fn refresh_current_snapshot_from_git(&mut self) {
+        match self.git_repo.get_diff_snapshot() {
+            Ok(mut snapshot) => {
+                self.annotate_staged_lines(&mut snapshot);
+
+                if self.snapshots.is_empty() {
+                    self.snapshots.push(snapshot);
+                    self.current_snapshot_index = 0;
+                } else {
+                    self.snapshots[self.current_snapshot_index] = snapshot;
+                }
+
+                // Clamp indices after snapshot replacement
+                if let Some(current_snapshot) = self.snapshots.get(self.current_snapshot_index) {
+                    if current_snapshot.files.is_empty() {
+                        self.current_file_index = 0;
+                        self.current_hunk_index = 0;
+                        self.selected_line_index = 0;
+                        return;
+                    }
+
+                    if self.current_file_index >= current_snapshot.files.len() {
+                        self.current_file_index = current_snapshot.files.len().saturating_sub(1);
+                    }
+
+                    if let Some(file) = current_snapshot.files.get(self.current_file_index) {
+                        if file.hunks.is_empty() {
+                            self.current_hunk_index = 0;
+                            self.selected_line_index = 0;
+                            return;
+                        }
+
+                        if self.current_hunk_index >= file.hunks.len() {
+                            self.current_hunk_index = file.hunks.len().saturating_sub(1);
+                        }
+
+                        if self.line_selection_mode {
+                            self.select_first_change_line();
+                        } else {
+                            self.selected_line_index = 0;
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                debug_log(format!("Failed to refresh snapshot after staging action: {}", e));
             }
         }
     }
@@ -1453,26 +1543,33 @@ mod tests {
             .expect("expected added line");
         app.selected_line_index = selected;
 
+        // Line mode: stage selected line and verify index changed
         app.stage_current_selection();
-        assert!(app.snapshots[0].files[0].hunks[0]
-            .staged_line_indices
-            .contains(&selected));
-        app.stage_current_selection();
-        assert!(!app.snapshots[0].files[0].hunks[0]
-            .staged_line_indices
-            .contains(&selected));
+        let cached_after_line_stage = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
+        assert!(cached_after_line_stage.contains("example.txt"));
 
+        // Reset to clean index before hunk-mode checks
+        run_git(&repo.path, &["reset", "HEAD", "--", "example.txt"]);
+        app.refresh_current_snapshot_from_git();
+
+        // Hunk mode: stage current hunk and verify index changed
         app.line_selection_mode = false;
         app.stage_current_selection();
-        assert!(app.snapshots[0].files[0].hunks[0].staged);
-        app.stage_current_selection();
-        assert!(!app.snapshots[0].files[0].hunks[0].staged);
+        let cached_after_hunk_stage = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
+        assert!(cached_after_hunk_stage.contains("example.txt"));
+
+        // Reset to clean index before file-mode checks
+        run_git(&repo.path, &["reset", "HEAD", "--", "example.txt"]);
+        app.refresh_current_snapshot_from_git();
 
         app.focus = FocusPane::FileList;
         app.stage_current_selection();
-        assert!(app.snapshots[0].files[0].hunks.iter().all(|h| h.staged));
+        let cached_after_file_stage = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
+        assert!(cached_after_file_stage.contains("example.txt"));
+
         app.stage_current_selection();
-        assert!(app.snapshots[0].files[0].hunks.iter().all(|h| !h.staged));
+        let cached_after_file_unstage = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
+        assert!(cached_after_file_unstage.trim().is_empty());
     }
 
     #[tokio::test]

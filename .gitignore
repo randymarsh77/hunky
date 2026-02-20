@@ -9,6 +9,7 @@ test-repo/
 
 # Nix
 .direnv/
+result
 
 # Site
 site/node_modules/

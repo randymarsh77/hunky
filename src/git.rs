@@ -10,6 +10,107 @@ pub struct GitRepo {
 }
 
 impl GitRepo {
+    fn build_single_line_patch(&self, hunk: &Hunk, line_index: usize, file_path: &Path) -> Result<String> {
+        // Verify the line exists
+        if line_index >= hunk.lines.len() {
+            return Err(anyhow::anyhow!("Line index out of bounds"));
+        }
+
+        let selected_line = &hunk.lines[line_index];
+
+        // Only allow patching change lines
+        if !((selected_line.starts_with('+') && !selected_line.starts_with("+++"))
+            || (selected_line.starts_with('-') && !selected_line.starts_with("---")))
+        {
+            return Err(anyhow::anyhow!("Can only patch + or - lines"));
+        }
+
+        // Collect local context around the selected line (only unchanged context lines)
+        let mut context_before = Vec::new();
+        let mut context_after = Vec::new();
+
+        let mut i = line_index;
+        while i > 0 && context_before.len() < 3 {
+            i -= 1;
+            let line = &hunk.lines[i];
+            if line.starts_with(' ') {
+                context_before.insert(0, line.clone());
+            } else {
+                break;
+            }
+        }
+
+        let mut i = line_index + 1;
+        while i < hunk.lines.len() && context_after.len() < 3 {
+            let line = &hunk.lines[i];
+            if line.starts_with(' ') {
+                context_after.push(line.clone());
+                i += 1;
+            } else {
+                break;
+            }
+        }
+
+        // Compute exact old/new start positions for the first line included in this mini-hunk.
+        // This avoids the previous approximation that used raw vector index offsets.
+        let start_idx = line_index.saturating_sub(context_before.len());
+        let mut old_start = hunk.old_start;
+        let mut new_start = hunk.new_start;
+
+        for line in hunk.lines.iter().take(start_idx) {
+            if line.starts_with(' ') {
+                old_start += 1;
+                new_start += 1;
+            } else if line.starts_with('-') && !line.starts_with("---") {
+                old_start += 1;
+            } else if line.starts_with('+') && !line.starts_with("+++") {
+                new_start += 1;
+            }
+        }
+
+        // Build the lines included in this mini-hunk and derive exact old/new counts
+        let mut mini_hunk_lines = Vec::new();
+        mini_hunk_lines.extend(context_before.clone());
+        mini_hunk_lines.push(selected_line.clone());
+        mini_hunk_lines.extend(context_after.clone());
+
+        let mut old_line_count = 0;
+        let mut new_line_count = 0;
+        for line in &mini_hunk_lines {
+            if line.starts_with(' ') {
+                old_line_count += 1;
+                new_line_count += 1;
+            } else if line.starts_with('-') && !line.starts_with("---") {
+                old_line_count += 1;
+            } else if line.starts_with('+') && !line.starts_with("+++") {
+                new_line_count += 1;
+            }
+        }
+
+        // Create a proper unified diff patch
+        let mut patch = String::new();
+        patch.push_str(&format!(
+            "diff --git a/{} b/{}\n",
+            file_path.display(),
+            file_path.display()
+        ));
+        patch.push_str(&format!("--- a/{}\n", file_path.display()));
+        patch.push_str(&format!("+++ b/{}\n", file_path.display()));
+        patch.push_str(&format!(
+            "@@ -{},{} +{},{} @@\n",
+            old_start, old_line_count, new_start, new_line_count
+        ));
+
+        for line in &mini_hunk_lines {
+            patch.push_str(line);
+            if !line.ends_with('\n') {
+                patch.push('\n');
+            }
+        }
+
+        Ok(patch)
+    }
+
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
         let repo_path = Repository::discover(path.as_ref())
             .context("Failed to find git repository")?
@@ -160,6 +261,107 @@ impl GitRepo {
         let result = hunks.borrow().clone();
         Ok(result)
     }
+
+    fn get_unstaged_file_hunks(&self, repo: &Repository, path: &Path) -> Result<Vec<Hunk>> {
+        let mut diff_opts = DiffOptions::new();
+        diff_opts.pathspec(path);
+        diff_opts.context_lines(3);
+
+        let index = repo.index()?;
+        let diff = repo.diff_index_to_workdir(Some(&index), Some(&mut diff_opts))?;
+
+        let path_buf = path.to_path_buf();
+
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let hunks = Rc::new(RefCell::new(Vec::new()));
+        let current_hunk_lines = Rc::new(RefCell::new(Vec::new()));
+        let current_old_start = Rc::new(RefCell::new(0usize));
+        let current_new_start = Rc::new(RefCell::new(0usize));
+        let in_hunk = Rc::new(RefCell::new(false));
+
+        let hunks_clone = hunks.clone();
+        let lines_clone = current_hunk_lines.clone();
+        let old_clone = current_old_start.clone();
+        let new_clone = current_new_start.clone();
+        let in_hunk_clone = in_hunk.clone();
+        let path_clone = path_buf.clone();
+
+        let lines_clone2 = current_hunk_lines.clone();
+        let in_hunk_clone2 = in_hunk.clone();
+
+        diff.foreach(
+            &mut |_, _| true,
+            None,
+            Some(&mut move |_, hunk| {
+                if *in_hunk_clone.borrow() && !lines_clone.borrow().is_empty() {
+                    hunks_clone.borrow_mut().push(Hunk::new(
+                        *old_clone.borrow(),
+                        *new_clone.borrow(),
+                        lines_clone.borrow().clone(),
+                        &path_clone,
+                    ));
+                    lines_clone.borrow_mut().clear();
+                }
+
+                *old_clone.borrow_mut() = hunk.old_start() as usize;
+                *new_clone.borrow_mut() = hunk.new_start() as usize;
+                *in_hunk_clone.borrow_mut() = true;
+                true
+            }),
+            Some(&mut move |_, _, line| {
+                if *in_hunk_clone2.borrow() {
+                    let content = String::from_utf8_lossy(line.content()).to_string();
+                    lines_clone2.borrow_mut().push(format!("{}{}", line.origin(), content));
+                }
+                true
+            }),
+        )?;
+
+        if *in_hunk.borrow() && !current_hunk_lines.borrow().is_empty() {
+            hunks.borrow_mut().push(Hunk::new(
+                *current_old_start.borrow(),
+                *current_new_start.borrow(),
+                current_hunk_lines.borrow().clone(),
+                &path_buf,
+            ));
+        }
+
+        let result = hunks.borrow().clone();
+        Ok(result)
+    }
+
+    fn resolve_line_against_unstaged_diff(
+        &self,
+        hunk: &Hunk,
+        line_index: usize,
+        file_path: &Path,
+    ) -> Result<(Hunk, usize)> {
+        let selected_line = hunk
+            .lines
+            .get(line_index)
+            .ok_or_else(|| anyhow::anyhow!("Line index out of bounds"))?
+            .trim_end()
+            .to_string();
+
+        let repo = Repository::open(&self.repo_path)?;
+        let unstaged_hunks = self.get_unstaged_file_hunks(&repo, file_path)?;
+
+        for unstaged_hunk in unstaged_hunks {
+            for (idx, line) in unstaged_hunk.lines.iter().enumerate() {
+                let is_change_line = (line.starts_with('+') && !line.starts_with("+++"))
+                    || (line.starts_with('-') && !line.starts_with("---"));
+
+                if is_change_line && line.trim_end() == selected_line {
+                    return Ok((unstaged_hunk, idx));
+                }
+            }
+        }
+
+        // Fallback to the passed-in hunk when no direct unstaged match is found.
+        Ok((hunk.clone(), line_index))
+    }
     
     /// Stage an entire file
     pub fn stage_file(&self, file_path: &Path) -> Result<()> {
@@ -258,50 +460,59 @@ impl GitRepo {
         let diff = repo.diff_tree_to_index(head_tree.as_ref(), None, Some(&mut diff_opts))?;
         
         let mut staged_lines = HashSet::new();
-        
-        // Collect all hunks from the staged diff with their line ranges
-        use std::cell::RefCell;
-        let staged_hunks = RefCell::new(Vec::new());
-        
+
+        // Track exact staged change locations by (line_number, content_without_prefix)
+        // This avoids false positives when the same text appears in multiple hunks.
+        let mut staged_additions: HashSet<(usize, String)> = HashSet::new();
+        let mut staged_deletions: HashSet<(usize, String)> = HashSet::new();
+
         diff.foreach(
             &mut |_, _| true,
             None,
-            Some(&mut |_, diff_hunk| {
-                // Store the hunk's old_start to identify it
-                staged_hunks.borrow_mut().push((diff_hunk.old_start() as usize, Vec::new()));
-                true
-            }),
+            None,
             Some(&mut |_, _, line| {
-                let content = String::from_utf8_lossy(line.content()).to_string();
-                let line_str = format!("{}{}", line.origin(), content);
-                
-                // Add to the most recent hunk
-                if let Some(last_hunk) = staged_hunks.borrow_mut().last_mut() {
-                    last_hunk.1.push(line_str);
+                let content = String::from_utf8_lossy(line.content())
+                    .trim_end_matches('\n')
+                    .to_string();
+
+                match line.origin() {
+                    '+' => {
+                        if let Some(new_lineno) = line.new_lineno() {
+                            staged_additions.insert((new_lineno as usize, content));
+                        }
+                    }
+                    '-' => {
+                        if let Some(old_lineno) = line.old_lineno() {
+                            staged_deletions.insert((old_lineno as usize, content));
+                        }
+                    }
+                    _ => {}
                 }
                 true
             }),
         )?;
-        
-        let staged_hunks = staged_hunks.into_inner();
-        
-        // Find the matching staged hunk by old_start position
-        let matching_staged_hunk = staged_hunks.iter()
-            .find(|(old_start, _)| *old_start == hunk.old_start);
-        
-        if let Some((_, staged_hunk_lines)) = matching_staged_hunk {
-            // Match lines from our hunk with the staged hunk's lines
-            for (hunk_idx, hunk_line) in hunk.lines.iter().enumerate() {
-                // Only check change lines (+ or -)
-                if (hunk_line.starts_with('+') && !hunk_line.starts_with("+++")) ||
-                   (hunk_line.starts_with('-') && !hunk_line.starts_with("---")) {
-                    // Check if this exact line exists in the matching staged hunk
-                    if staged_hunk_lines.iter().any(|staged_line| {
-                        staged_line.trim_end() == hunk_line.trim_end()
-                    }) {
-                        staged_lines.insert(hunk_idx);
-                    }
+
+        // Walk the target hunk and compute exact old/new coordinates for each line,
+        // then check whether that exact change exists in the staged index diff.
+        let mut old_lineno = hunk.old_start;
+        let mut new_lineno = hunk.new_start;
+
+        for (hunk_idx, hunk_line) in hunk.lines.iter().enumerate() {
+            if hunk_line.starts_with(' ') {
+                old_lineno += 1;
+                new_lineno += 1;
+            } else if hunk_line.starts_with('-') && !hunk_line.starts_with("---") {
+                let content = hunk_line[1..].trim_end_matches('\n').to_string();
+                if staged_deletions.contains(&(old_lineno, content)) {
+                    staged_lines.insert(hunk_idx);
                 }
+                old_lineno += 1;
+            } else if hunk_line.starts_with('+') && !hunk_line.starts_with("+++") {
+                let content = hunk_line[1..].trim_end_matches('\n').to_string();
+                if staged_additions.contains(&(new_lineno, content)) {
+                    staged_lines.insert(hunk_idx);
+                }
+                new_lineno += 1;
             }
         }
         
@@ -313,110 +524,17 @@ impl GitRepo {
         use std::process::Command;
         use std::io::Write;
         
-        // Verify the line exists
-        if line_index >= hunk.lines.len() {
-            return Err(anyhow::anyhow!("Line index out of bounds"));
-        }
-        
-        let selected_line = &hunk.lines[line_index];
-        
-        // Only allow staging change lines
-        if !((selected_line.starts_with('+') && !selected_line.starts_with("+++")) ||
-             (selected_line.starts_with('-') && !selected_line.starts_with("---"))) {
-            return Err(anyhow::anyhow!("Can only stage + or - lines"));
-        }
-        
-        // For now, let's use a simpler approach: stage the whole hunk
-        // In a production implementation, you'd want to use git add --interactive style patching
-        // or use libgit2's apply functionality with more precise patches
-        
-        // Create a patch with just this single line change
-        let mut patch = String::new();
-        
-        // Diff header
-        patch.push_str(&format!("diff --git a/{} b/{}\n", file_path.display(), file_path.display()));
-        patch.push_str(&format!("--- a/{}\n", file_path.display()));
-        patch.push_str(&format!("+++ b/{}\n", file_path.display()));
-        
-        // For single-line staging, we need proper context from the hunk
-        // Find all context lines around our target line
-        let mut context_before = Vec::new();
-        let mut context_after = Vec::new();
-        
-        // Collect context before the selected line
-        let mut i = line_index;
-        while i > 0 && context_before.len() < 3 {
-            i -= 1;
-            let line = &hunk.lines[i];
-            if line.starts_with(' ') {
-                context_before.insert(0, line.clone());
-            } else {
-                // Hit another change line, stop
-                break;
-            }
-        }
-        
-        // Collect context after the selected line
-        let mut i = line_index + 1;
-        while i < hunk.lines.len() && context_after.len() < 3 {
-            let line = &hunk.lines[i];
-            if line.starts_with(' ') {
-                context_after.push(line.clone());
-                i += 1;
-            } else {
-                // Hit another change line, stop
-                break;
-            }
-        }
-        
-        // Calculate line numbers for the hunk header
-        // This is approximate - we're counting context lines to estimate position
-        let is_addition = selected_line.starts_with('+');
-        let context_before_count = context_before.len();
-        
-        let old_line_count = context_before_count + if is_addition { 0 } else { 1 } + context_after.len();
-        let new_line_count = context_before_count + if is_addition { 1 } else { 0 } + context_after.len();
-        
-        // Estimate old_start and new_start (this is approximate)
-        let estimated_old_start = hunk.old_start + line_index - context_before_count;
-        let estimated_new_start = hunk.new_start + line_index - context_before_count;
-        
-        // Write hunk header
-        patch.push_str(&format!("@@ -{},{} +{},{} @@\n",
-            estimated_old_start,
-            old_line_count,
-            estimated_new_start,
-            new_line_count
-        ));
-        
-        // Write context before
-        for line in &context_before {
-            patch.push_str(line);
-            if !line.ends_with('\n') {
-                patch.push('\n');
-            }
-        }
-        
-        // Write the selected line
-        patch.push_str(selected_line);
-        if !selected_line.ends_with('\n') {
-            patch.push('\n');
-        }
-        
-        // Write context after
-        for line in &context_after {
-            patch.push_str(line);
-            if !line.ends_with('\n') {
-                patch.push('\n');
-            }
-        }
+        let (resolved_hunk, resolved_line_index) =
+            self.resolve_line_against_unstaged_diff(hunk, line_index, file_path)?;
+
+        let patch = self.build_single_line_patch(&resolved_hunk, resolved_line_index, file_path)?;
         
         // Try to apply the patch
         let mut child = Command::new("git")
             .arg("apply")
             .arg("--cached")
             .arg("--unidiff-zero")
-            .arg("--allow-overlap")
+            .arg("--recount")
             .arg("-")
             .current_dir(&self.repo_path)
             .stdin(std::process::Stdio::piped())
@@ -448,101 +566,8 @@ impl GitRepo {
         use std::process::Command;
         use std::io::Write;
         
-        // Verify the line exists
-        if line_index >= hunk.lines.len() {
-            return Err(anyhow::anyhow!("Line index out of bounds"));
-        }
-        
-        let selected_line = &hunk.lines[line_index];
-        
-        // Only allow unstaging change lines
-        if !((selected_line.starts_with('+') && !selected_line.starts_with("+++")) ||
-             (selected_line.starts_with('-') && !selected_line.starts_with("---"))) {
-            return Err(anyhow::anyhow!("Can only unstage + or - lines"));
-        }
-        
-        // Create a reverse patch to unstage the line
-        // For unstaging, we need to reverse the operation:
-        // - If the line is "+something", we remove it from the index (reverse: "-something")
-        // - If the line is "-something", we add it back to the index (reverse: "+something")
-        
-        let mut patch = String::new();
-        
-        // Diff header
-        patch.push_str(&format!("diff --git a/{} b/{}\n", file_path.display(), file_path.display()));
-        patch.push_str(&format!("--- a/{}\n", file_path.display()));
-        patch.push_str(&format!("+++ b/{}\n", file_path.display()));
-        
-        // Find context lines around the target line
-        let mut context_before = Vec::new();
-        let mut context_after = Vec::new();
-        
-        // Collect context before the selected line
-        let mut i = line_index;
-        while i > 0 && context_before.len() < 3 {
-            i -= 1;
-            let line = &hunk.lines[i];
-            if line.starts_with(' ') {
-                context_before.insert(0, line.clone());
-            } else {
-                break;
-            }
-        }
-        
-        // Collect context after the selected line
-        let mut i = line_index + 1;
-        while i < hunk.lines.len() && context_after.len() < 3 {
-            let line = &hunk.lines[i];
-            if line.starts_with(' ') {
-                context_after.push(line.clone());
-                i += 1;
-            } else {
-                break;
-            }
-        }
-        
-        // For unstaging, we apply the SAME patch as staging but with --reverse flag
-        // Don't manually reverse the line - git apply --reverse will do that
-        
-        // Calculate line numbers for the hunk header
-        let is_addition = selected_line.starts_with('+');
-        let context_before_count = context_before.len();
-        
-        let old_line_count = context_before_count + if is_addition { 0 } else { 1 } + context_after.len();
-        let new_line_count = context_before_count + if is_addition { 1 } else { 0 } + context_after.len();
-        
-        let estimated_old_start = hunk.old_start + line_index - context_before_count;
-        let estimated_new_start = hunk.new_start + line_index - context_before_count;
-        
-        // Write hunk header
-        patch.push_str(&format!("@@ -{},{} +{},{} @@\n",
-            estimated_old_start,
-            old_line_count,
-            estimated_new_start,
-            new_line_count
-        ));
-        
-        // Write context before
-        for line in &context_before {
-            patch.push_str(line);
-            if !line.ends_with('\n') {
-                patch.push('\n');
-            }
-        }
-        
-        // Write the selected line (not reversed - git apply --reverse will handle that)
-        patch.push_str(selected_line);
-        if !selected_line.ends_with('\n') {
-            patch.push('\n');
-        }
-        
-        // Write context after
-        for line in &context_after {
-            patch.push_str(line);
-            if !line.ends_with('\n') {
-                patch.push('\n');
-            }
-        }
+        // Build the same single-line patch and apply it in reverse to index.
+        let patch = self.build_single_line_patch(hunk, line_index, file_path)?;
         
         // Apply the reverse patch to the index using --cached and --reverse
         let mut child = Command::new("git")
@@ -550,7 +575,7 @@ impl GitRepo {
             .arg("--cached")
             .arg("--reverse")
             .arg("--unidiff-zero")
-            .arg("--allow-overlap")
+            .arg("--recount")
             .arg("-")
             .current_dir(&self.repo_path)
             .stdin(std::process::Stdio::piped())
@@ -822,6 +847,105 @@ mod tests {
             .expect("failed to unstage single line");
         let staged_after = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
         assert!(staged_after.trim().is_empty());
+    }
+
+    #[test]
+    fn detect_staged_lines_uses_line_coordinates_not_just_content() {
+        let repo = TestRepo::new();
+        repo.write_file("example.txt", "one\ntwo\nthree\nfour\n");
+        repo.commit_all("initial");
+
+        // First edit: stage an added line near the top
+        repo.write_file("example.txt", "one\ndup\ntwo\nthree\nfour\n");
+        run_git(&repo.path, &["add", "example.txt"]);
+
+        // Second edit: move the same content to the bottom (unstaged)
+        repo.write_file("example.txt", "one\ntwo\nthree\nfour\ndup\n");
+
+        let git_repo = GitRepo::new(&repo.path).expect("failed to open test repo");
+        let snapshot = git_repo
+            .get_diff_snapshot()
+            .expect("failed to get diff snapshot");
+        let file_change = snapshot
+            .files
+            .iter()
+            .find(|file| file.path == PathBuf::from("example.txt"))
+            .expect("expected file in diff");
+        let hunk = file_change.hunks.first().expect("expected hunk");
+
+        // In HEAD->worktree this is an addition at the bottom. It should NOT be considered
+        // staged just because the same text is staged elsewhere in the file.
+        let staged_lines = git_repo
+            .detect_staged_lines(hunk, Path::new("example.txt"))
+            .expect("failed to detect staged lines");
+
+        assert!(staged_lines.is_empty());
+    }
+
+    #[test]
+    fn stage_single_line_handles_existing_staged_changes_in_same_file() {
+        let repo = TestRepo::new();
+        repo.write_file("example.txt", "one\ntwo\nthree\nfour\n");
+        repo.commit_all("initial");
+
+        // Stage one change first
+        repo.write_file("example.txt", "one\ntwo-staged\nthree\nfour\n");
+        run_git(&repo.path, &["add", "example.txt"]);
+
+        // Leave another change unstaged in the same file
+        repo.write_file("example.txt", "one\ntwo-staged\nthree\nfour-unstaged\n");
+
+        let git_repo = GitRepo::new(&repo.path).expect("failed to open test repo");
+        let snapshot = git_repo
+            .get_diff_snapshot()
+            .expect("failed to get diff snapshot");
+        let file_change = snapshot
+            .files
+            .iter()
+            .find(|file| file.path == PathBuf::from("example.txt"))
+            .expect("expected file in diff");
+        let hunk = file_change.hunks.first().expect("expected hunk");
+
+        let add_line_index = hunk
+            .lines
+            .iter()
+            .position(|line| line.trim_end() == "+four-unstaged")
+            .expect("expected unstaged added line");
+
+        git_repo
+            .stage_single_line(hunk, add_line_index, Path::new("example.txt"))
+            .expect("failed to stage single line in mixed staged/unstaged file");
+
+        // Refresh snapshot after first line staging so line coordinates match updated index state
+        let refreshed_snapshot = git_repo
+            .get_diff_snapshot()
+            .expect("failed to get refreshed diff snapshot");
+        let refreshed_file_change = refreshed_snapshot
+            .files
+            .iter()
+            .find(|file| file.path == PathBuf::from("example.txt"))
+            .expect("expected file in refreshed diff");
+        let refreshed_hunk = refreshed_file_change
+            .hunks
+            .first()
+            .expect("expected refreshed hunk");
+
+        let remove_line_index = refreshed_hunk
+            .lines
+            .iter()
+            .position(|line| line.trim_end() == "-four")
+            .expect("expected unstaged removed line");
+
+        git_repo
+            .stage_single_line(refreshed_hunk, remove_line_index, Path::new("example.txt"))
+            .expect("failed to stage paired removal line in mixed staged/unstaged file");
+
+        let unstaged_after = run_git(&repo.path, &["diff", "--", "example.txt"]);
+        assert!(
+            unstaged_after.trim().is_empty(),
+            "expected no unstaged diff after staging line, got:\n{}",
+            unstaged_after
+        );
     }
 
     #[test]
