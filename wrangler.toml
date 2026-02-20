@@ -1,8 +1,6 @@
 name = "hunky"
 compatibility_date = "2026-02-20"
-main = "landing/_worker.js"
 pages_build_output_dir = "landing"
 
 [assets]
 directory = "landing"
-binding = "ASSETS"
