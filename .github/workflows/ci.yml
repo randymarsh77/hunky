@@ -92,7 +92,7 @@ jobs:
 
       - name: Read release version
         id: version
-        run: echo "value=$(cat version.txt)" >> "$GITHUB_OUTPUT"
+        run: echo "value=$(head -n 1 version.txt | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
 
       - name: Check if release exists
         id: release_check
