@@ -3,9 +3,12 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    rust-overlay.url = "github:oxalica/rust-overlay";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
     flake-utils.url = "github:numtide/flake-utils";
+      inputs.nixpkgs.follows = "nixpkgs";
   };
+    };
 
   outputs =
     {
@@ -33,7 +36,8 @@
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
           nativeBuildInputs = with pkgs; [ pkg-config ];
-          buildInputs = with pkgs; [ openssl ] ++ lib.optionals stdenv.isDarwin [ darwin.apple_sdk.frameworks.Security ];
+          nativeCheckInputs = with pkgs; [ git ];
+          buildInputs = with pkgs; [ openssl ];
         };
       in
       {
