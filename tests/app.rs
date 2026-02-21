@@ -500,6 +500,138 @@ async fn ui_draw_renders_file_list_variants() {
 }
 
 #[tokio::test]
+async fn ui_header_renders_mode_labels_across_breakpoints() {
+    let repo = TestRepo::new();
+    let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+        .await
+        .expect("failed to create app");
+
+    let cases = vec![
+        (
+            Mode::Streaming(StreamingType::Buffered),
+            160,
+            "STREAMING (Buffered)",
+        ),
+        (
+            Mode::Streaming(StreamingType::Auto(StreamSpeed::Medium)),
+            160,
+            "STREAMING (Auto - Medium)",
+        ),
+        (
+            Mode::Streaming(StreamingType::Auto(StreamSpeed::Slow)),
+            160,
+            "STREAMING (Auto - Slow)",
+        ),
+        (
+            Mode::Streaming(StreamingType::Buffered),
+            70,
+            "STREAM (Buff)",
+        ),
+        (
+            Mode::Streaming(StreamingType::Auto(StreamSpeed::Fast)),
+            70,
+            "STREAM (Fast)",
+        ),
+        (
+            Mode::Streaming(StreamingType::Auto(StreamSpeed::Medium)),
+            70,
+            "STREAM (Med)",
+        ),
+        (
+            Mode::Streaming(StreamingType::Auto(StreamSpeed::Slow)),
+            70,
+            "STREAM (Slow)",
+        ),
+        (Mode::Streaming(StreamingType::Buffered), 45, "STM:B"),
+        (
+            Mode::Streaming(StreamingType::Auto(StreamSpeed::Fast)),
+            45,
+            "STM:F",
+        ),
+        (
+            Mode::Streaming(StreamingType::Auto(StreamSpeed::Slow)),
+            45,
+            "STM:S",
+        ),
+        (Mode::Streaming(StreamingType::Buffered), 36, "| B"),
+        (
+            Mode::Streaming(StreamingType::Auto(StreamSpeed::Fast)),
+            36,
+            "| F",
+        ),
+        (
+            Mode::Streaming(StreamingType::Auto(StreamSpeed::Slow)),
+            36,
+            "| S",
+        ),
+    ];
+
+    for (mode, width, expected) in cases {
+        app.mode = mode;
+        let mut terminal =
+            Terminal::new(TestBackend::new(width, 20)).expect("failed to create terminal");
+        terminal
+            .draw(|frame| {
+                UI::new(&app).draw(frame);
+            })
+            .expect("failed to draw ui");
+        let rendered = render_buffer_to_string(&terminal);
+        assert!(
+            rendered.contains(expected),
+            "missing '{expected}' in:\n{rendered}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn ui_draw_renders_partial_and_seen_hunk_states() {
+    let repo = TestRepo::new();
+    repo.write_file("example.rs", "fn main() {\n    println!(\"one\");\n}\n");
+    repo.commit_all("initial");
+    repo.write_file(
+        "example.rs",
+        "fn main() {\n    println!(\"two\");\n    println!(\"three\");\n}\n",
+    );
+
+    let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+        .await
+        .expect("failed to create app");
+    app.current_snapshot_index = 0;
+    app.current_file_index = 0;
+    app.current_hunk_index = 0;
+    app.syntax_highlighting = false;
+    app.line_selection_mode = true;
+
+    let hunk = &mut app.snapshots[0].files[0].hunks[0];
+    hunk.lines = vec![
+        " before 1\n".to_string(),
+        " before 2\n".to_string(),
+        " before 3\n".to_string(),
+        " before 4\n".to_string(),
+        " before 5\n".to_string(),
+        " before 6\n".to_string(),
+        "-old line\n".to_string(),
+        "+new line\n".to_string(),
+        " after 1\n".to_string(),
+        " after 2\n".to_string(),
+    ];
+    hunk.staged_line_indices.insert(7);
+    hunk.seen = true;
+    app.selected_line_index = 6;
+
+    let mut terminal = Terminal::new(TestBackend::new(120, 30)).expect("failed to create terminal");
+    terminal
+        .draw(|frame| {
+            UI::new(&app).draw(frame);
+        })
+        .expect("failed to draw partial hunk ui");
+    let rendered = render_buffer_to_string(&terminal);
+    assert!(rendered.contains("[PARTIAL ⚠] [SEEN]"));
+    assert!(rendered.contains("[0✓ 1⚠]"));
+    assert!(rendered.contains("►"));
+}
+
+#[tokio::test]
 async fn navigation_handles_empty_and_boundary_states() {
     let repo = TestRepo::new();
     let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
