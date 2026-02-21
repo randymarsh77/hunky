@@ -18,6 +18,12 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@v31
 
+      - name: Check formatting
+        run: nix develop --accept-flake-config --command cargo fmt -- --check
+
+      - name: Lint
+        run: nix develop --accept-flake-config --command cargo clippy --locked -- -D warnings
+
       - name: Build
         run: nix develop --accept-flake-config --command cargo build --locked
 
@@ -53,7 +59,44 @@ jobs:
           name: benchmark-results
           path: target/criterion
 
+  check-release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    outputs:
+      needed: ${{ steps.release_check.outputs.needed }}
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read release version
+        id: version
+        run: echo "value=$(head -n 1 version.txt | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Check if release exists
+        id: release_check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = `v${{ steps.version.outputs.value }}`;
+            try {
+              await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag,
+              });
+              core.setOutput("needed", "false");
+            } catch (error) {
+              if (error.status === 404) {
+                core.setOutput("needed", "true");
+                return;
+              }
+              throw error;
+            }
+
   release-builds:
+    needs: [build-test-run, check-release]
+    if: needs.check-release.outputs.needed == 'true'
     strategy:
       matrix:
         include:
@@ -63,7 +106,7 @@ jobs:
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             archive: hunky-aarch64-unknown-linux-gnu.tar.gz
-          - os: macos-13
+          - os: macos-15
             target: x86_64-apple-darwin
             archive: hunky-x86_64-apple-darwin.tar.gz
           - os: macos-14
@@ -113,8 +156,8 @@ jobs:
           path: lcov.info
 
   publish-release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    needs: release-builds
+    needs: [release-builds, check-release]
+    if: needs.check-release.outputs.needed == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -122,43 +165,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Read release version
-        id: version
-        run: echo "value=$(head -n 1 version.txt | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
-
-      - name: Check if release exists
-        id: release_check
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const tag = `v${{ steps.version.outputs.value }}`;
-            try {
-              await github.rest.repos.getReleaseByTag({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                tag,
-              });
-              core.setOutput("exists", "true");
-            } catch (error) {
-              if (error.status === 404) {
-                core.setOutput("exists", "false");
-                return;
-              }
-              throw error;
-            }
-
       - name: Download release artifacts
-        if: steps.release_check.outputs.exists == 'false'
         uses: actions/download-artifact@v4
         with:
           pattern: hunky-*.tar.gz
           merge-multiple: true
 
       - name: Publish GitHub release
-        if: steps.release_check.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.value }}
+          tag_name: v${{ needs.check-release.outputs.version }}
           files: hunky-*.tar.gz
 
   deploy-site:
