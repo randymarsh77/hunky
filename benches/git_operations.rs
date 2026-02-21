@@ -154,22 +154,21 @@ fn bench_stage_hunk(c: &mut Criterion) {
     let git_repo = GitRepo::new(&repo.path).expect("failed to open repo");
     let file_path = Path::new("example.txt");
 
+    let snapshot = git_repo
+        .get_diff_snapshot()
+        .expect("failed to get diff snapshot");
+    let file_change = snapshot
+        .files
+        .iter()
+        .find(|f| f.path == PathBuf::from("example.txt"))
+        .expect("expected file in diff");
+    let hunk = file_change.hunks.first().expect("expected hunk");
+
     c.bench_function("stage_hunk", |b| {
         b.iter(|| {
-            let snapshot = git_repo
-                .get_diff_snapshot()
-                .expect("failed to get diff snapshot");
-            let file_change = snapshot
-                .files
-                .iter()
-                .find(|f| f.path == PathBuf::from("example.txt"))
-                .expect("expected file in diff");
-            let hunk = file_change.hunks.first().expect("expected hunk");
-
             git_repo
                 .stage_hunk(hunk, file_path)
                 .expect("failed to stage hunk");
-            // Reset for next iteration
             run_git(&repo.path, &["reset", "HEAD", "example.txt"]);
         });
     });
@@ -180,22 +179,23 @@ fn bench_unstage_hunk(c: &mut Criterion) {
     let git_repo = GitRepo::new(&repo.path).expect("failed to open repo");
     let file_path = Path::new("example.txt");
 
+    // Pre-compute the hunk from the staged state
+    run_git(&repo.path, &["add", "example.txt"]);
+    let snapshot = git_repo
+        .get_diff_snapshot()
+        .expect("failed to get diff snapshot");
+    let file_change = snapshot
+        .files
+        .iter()
+        .find(|f| f.path == PathBuf::from("example.txt"))
+        .expect("expected file in diff");
+    let hunk = file_change.hunks.first().expect("expected hunk").clone();
+
     c.bench_function("unstage_hunk", |b| {
         b.iter(|| {
-            // Stage first
             run_git(&repo.path, &["add", "example.txt"]);
-            let snapshot = git_repo
-                .get_diff_snapshot()
-                .expect("failed to get diff snapshot");
-            let file_change = snapshot
-                .files
-                .iter()
-                .find(|f| f.path == PathBuf::from("example.txt"))
-                .expect("expected file in diff");
-            let hunk = file_change.hunks.first().expect("expected hunk");
-
             git_repo
-                .unstage_hunk(hunk, file_path)
+                .unstage_hunk(&hunk, file_path)
                 .expect("failed to unstage hunk");
         });
     });
@@ -205,27 +205,26 @@ fn bench_stage_single_line(c: &mut Criterion) {
     let repo = setup_modified_repo();
     let git_repo = GitRepo::new(&repo.path).expect("failed to open repo");
 
+    let snapshot = git_repo
+        .get_diff_snapshot()
+        .expect("failed to get diff snapshot");
+    let file_change = snapshot
+        .files
+        .iter()
+        .find(|f| f.path == PathBuf::from("example.txt"))
+        .expect("expected file in diff");
+    let hunk = file_change.hunks.first().expect("expected hunk");
+    let line_index = hunk
+        .lines
+        .iter()
+        .position(|line| line.starts_with('+') && !line.starts_with("+++"))
+        .expect("expected added line");
+
     c.bench_function("stage_single_line", |b| {
         b.iter(|| {
-            let snapshot = git_repo
-                .get_diff_snapshot()
-                .expect("failed to get diff snapshot");
-            let file_change = snapshot
-                .files
-                .iter()
-                .find(|f| f.path == PathBuf::from("example.txt"))
-                .expect("expected file in diff");
-            let hunk = file_change.hunks.first().expect("expected hunk");
-            let line_index = hunk
-                .lines
-                .iter()
-                .position(|line| line.starts_with('+') && !line.starts_with("+++"))
-                .expect("expected added line");
-
             git_repo
                 .stage_single_line(hunk, line_index, Path::new("example.txt"))
                 .expect("failed to stage single line");
-            // Reset for next iteration
             run_git(&repo.path, &["reset", "HEAD", "example.txt"]);
         });
     });
@@ -235,27 +234,28 @@ fn bench_unstage_single_line(c: &mut Criterion) {
     let repo = setup_modified_repo();
     let git_repo = GitRepo::new(&repo.path).expect("failed to open repo");
 
+    // Pre-compute the hunk from the staged state
+    run_git(&repo.path, &["add", "example.txt"]);
+    let snapshot = git_repo
+        .get_diff_snapshot()
+        .expect("failed to get diff snapshot");
+    let file_change = snapshot
+        .files
+        .iter()
+        .find(|f| f.path == PathBuf::from("example.txt"))
+        .expect("expected file in diff");
+    let hunk = file_change.hunks.first().expect("expected hunk").clone();
+    let line_index = hunk
+        .lines
+        .iter()
+        .position(|line| line.starts_with('+') && !line.starts_with("+++"))
+        .expect("expected added line");
+
     c.bench_function("unstage_single_line", |b| {
         b.iter(|| {
-            // Stage first
             run_git(&repo.path, &["add", "example.txt"]);
-            let snapshot = git_repo
-                .get_diff_snapshot()
-                .expect("failed to get diff snapshot");
-            let file_change = snapshot
-                .files
-                .iter()
-                .find(|f| f.path == PathBuf::from("example.txt"))
-                .expect("expected file in diff");
-            let hunk = file_change.hunks.first().expect("expected hunk");
-            let line_index = hunk
-                .lines
-                .iter()
-                .position(|line| line.starts_with('+') && !line.starts_with("+++"))
-                .expect("expected added line");
-
             git_repo
-                .unstage_single_line(hunk, line_index, Path::new("example.txt"))
+                .unstage_single_line(&hunk, line_index, Path::new("example.txt"))
                 .expect("failed to unstage single line");
         });
     });
@@ -275,12 +275,12 @@ fn bench_detect_staged_lines(c: &mut Criterion) {
         .iter()
         .find(|f| f.path == PathBuf::from("example.txt"))
         .expect("expected file in diff");
-    let hunk = file_change.hunks.first().expect("expected hunk").clone();
+    let hunk = file_change.hunks.first().expect("expected hunk");
 
     c.bench_function("detect_staged_lines", |b| {
         b.iter(|| {
             git_repo
-                .detect_staged_lines(&hunk, Path::new("example.txt"))
+                .detect_staged_lines(hunk, Path::new("example.txt"))
                 .expect("failed to detect staged lines");
         });
     });
@@ -290,22 +290,21 @@ fn bench_toggle_hunk_staging(c: &mut Criterion) {
     let repo = setup_modified_repo();
     let git_repo = GitRepo::new(&repo.path).expect("failed to open repo");
 
+    let snapshot = git_repo
+        .get_diff_snapshot()
+        .expect("failed to get diff snapshot");
+    let file_change = snapshot
+        .files
+        .iter()
+        .find(|f| f.path == PathBuf::from("example.txt"))
+        .expect("expected file in diff");
+    let hunk = file_change.hunks.first().expect("expected hunk");
+
     c.bench_function("toggle_hunk_staging", |b| {
         b.iter(|| {
-            let snapshot = git_repo
-                .get_diff_snapshot()
-                .expect("failed to get diff snapshot");
-            let file_change = snapshot
-                .files
-                .iter()
-                .find(|f| f.path == PathBuf::from("example.txt"))
-                .expect("expected file in diff");
-            let hunk = file_change.hunks.first().expect("expected hunk");
-
             git_repo
                 .toggle_hunk_staging(hunk, Path::new("example.txt"))
                 .expect("failed to toggle hunk staging");
-            // Reset for next iteration so the hunk is back to unstaged
             run_git(&repo.path, &["reset", "HEAD", "example.txt"]);
         });
     });
