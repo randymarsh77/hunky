@@ -29,6 +29,11 @@ function HomepageHeader() {
             to="/coverage">
             Coverage Report
           </Link>
+          <Link
+            className="button button--secondary button--lg"
+            to="/benchmarks">
+            Benchmarks
+          </Link>
         </div>
       </div>
     </header>
