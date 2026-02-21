@@ -40,7 +40,7 @@
           buildInputs = with pkgs; [ openssl ];
         };
       in
-      {
+      rec {
         packages = {
           default = hunkyPackage;
           hunky = hunkyPackage;

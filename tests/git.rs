@@ -13,7 +13,8 @@ impl TestRepo {
             .duration_since(UNIX_EPOCH)
             .expect("failed to get system time")
             .as_nanos();
-        let path = std::env::temp_dir().join(format!("hunky-git-tests-{}-{}", std::process::id(), unique));
+        let path =
+            std::env::temp_dir().join(format!("hunky-git-tests-{}-{}", std::process::id(), unique));
 
         fs::create_dir_all(&path).expect("failed to create temp directory");
 
@@ -107,7 +108,9 @@ fn stage_and_unstage_file_updates_index() {
     let git_repo = GitRepo::new(&repo.path).expect("failed to open test repo");
     let file_path = Path::new("example.txt");
 
-    git_repo.stage_file(file_path).expect("failed to stage file");
+    git_repo
+        .stage_file(file_path)
+        .expect("failed to stage file");
     let staged = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
     assert!(staged.contains("example.txt"));
 
@@ -193,7 +196,10 @@ fn stage_and_unstage_single_line_tracks_index_changes() {
         .iter()
         .find(|file| file.path == PathBuf::from("example.txt"))
         .expect("expected file in refreshed diff");
-    let refreshed_hunk = refreshed_file_change.hunks.first().expect("expected refreshed hunk");
+    let refreshed_hunk = refreshed_file_change
+        .hunks
+        .first()
+        .expect("expected refreshed hunk");
     let refreshed_line_index = refreshed_hunk
         .lines
         .iter()
@@ -201,7 +207,11 @@ fn stage_and_unstage_single_line_tracks_index_changes() {
         .expect("expected added line in refreshed hunk");
 
     git_repo
-        .unstage_single_line(refreshed_hunk, refreshed_line_index, Path::new("example.txt"))
+        .unstage_single_line(
+            refreshed_hunk,
+            refreshed_line_index,
+            Path::new("example.txt"),
+        )
         .expect("failed to unstage single line");
     let staged_after = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
     assert!(staged_after.trim().is_empty());
@@ -379,7 +389,10 @@ fn stage_single_line_targets_selected_duplicate_addition() {
         .enumerate()
         .filter_map(|(idx, line)| (line.trim_end() == "+dup").then_some(idx))
         .collect();
-    assert!(dup_indices.len() >= 2, "expected at least two duplicate +dup lines");
+    assert!(
+        dup_indices.len() >= 2,
+        "expected at least two duplicate +dup lines"
+    );
 
     // Stage the second duplicate only.
     git_repo
@@ -479,7 +492,10 @@ fn unstage_single_line_targets_selected_duplicate_addition() {
         .enumerate()
         .filter_map(|(idx, line)| (line.trim_end() == "+dup").then_some(idx))
         .collect();
-    assert!(dup_indices.len() >= 2, "expected at least two duplicate +dup lines");
+    assert!(
+        dup_indices.len() >= 2,
+        "expected at least two duplicate +dup lines"
+    );
 
     // Unstage the second duplicate only.
     git_repo
@@ -765,7 +781,10 @@ fn regression_flake_lock_stage_hunk_from_partial_index_state() {
         .iter()
         .find(|file| file.path == PathBuf::from("flake.lock"))
         .expect("expected flake.lock in diff");
-    let hunk = file_change.hunks.first().expect("expected hunk in flake.lock");
+    let hunk = file_change
+        .hunks
+        .first()
+        .expect("expected hunk in flake.lock");
 
     // TDD target: this should succeed once fixed. It currently fails with
     // "patch does not apply" for flake.lock around old_start=20.
