@@ -131,3 +131,7 @@ pub fn debug(msg: impl AsRef<str>) {
 pub fn trace(msg: impl AsRef<str>) {
     log(LogLevel::Trace, msg);
 }
+
+#[cfg(test)]
+#[path = "../tests/logger.rs"]
+mod tests;

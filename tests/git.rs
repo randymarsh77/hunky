@@ -59,6 +59,45 @@ fn run_git(repo_path: &Path, args: &[&str]) -> String {
 }
 
 #[test]
+fn new_discovers_repo_from_nested_path_and_reports_repo_path() {
+    let repo = TestRepo::new();
+    fs::create_dir_all(repo.path.join("nested/dir")).expect("failed to create nested path");
+
+    let git_repo = GitRepo::new(repo.path.join("nested/dir")).expect("failed to discover repo");
+    assert_eq!(git_repo.repo_path(), repo.path.as_path());
+}
+
+#[test]
+fn new_returns_error_for_non_repo_path() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("failed to get system time")
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!(
+        "hunky-non-repo-tests-{}-{}",
+        std::process::id(),
+        unique
+    ));
+    fs::create_dir_all(&path).expect("failed to create temp directory");
+
+    let result = GitRepo::new(&path);
+    assert!(result.is_err(), "expected non-repo path to fail");
+
+    let _ = fs::remove_dir_all(path);
+}
+
+#[test]
+fn commit_with_editor_returns_non_success_when_nothing_to_commit() {
+    let repo = TestRepo::new();
+    let git_repo = GitRepo::new(&repo.path).expect("failed to open test repo");
+
+    let status = git_repo
+        .commit_with_editor()
+        .expect("failed to run git commit");
+    assert!(!status.success());
+}
+
+#[test]
 fn stage_and_unstage_file_updates_index() {
     let repo = TestRepo::new();
     repo.write_file("example.txt", "line 1\nline 2\n");
