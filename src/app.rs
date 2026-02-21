@@ -497,12 +497,10 @@ impl App {
             self.current_file_index += 1;
             self.current_hunk_index = 0;
             
-            // If no more files, stay at the last hunk of the last file
+            // If no more files, wrap to the first hunk of the first file
             if self.current_file_index >= snapshot.files.len() {
-                self.current_file_index = snapshot.files.len().saturating_sub(1);
-                if let Some(last_file) = snapshot.files.get(self.current_file_index) {
-                    self.current_hunk_index = last_file.hunks.len().saturating_sub(1);
-                }
+                self.current_file_index = 0;
+                self.current_hunk_index = 0;
             }
         }
     }
