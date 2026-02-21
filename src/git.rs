@@ -101,9 +101,7 @@ impl GitRepo {
         let selected_line = &hunk.lines[line_index];
 
         // Only allow patching change lines
-        if !((selected_line.starts_with('+') && !selected_line.starts_with("+++"))
-            || (selected_line.starts_with('-') && !selected_line.starts_with("---")))
-        {
+        if !Self::is_change_line(selected_line) {
             return Err(anyhow::anyhow!("Can only patch + or - lines"));
         }
 
@@ -239,6 +237,7 @@ impl GitRepo {
         Ok(count)
     }
 
+    #[allow(dead_code)]
     fn set_hunk_staged_lines_with_reset(
         &self,
         hunk: &Hunk,
@@ -337,6 +336,7 @@ impl GitRepo {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn set_hunk_staged_lines(
         &self,
         hunk: &Hunk,
@@ -731,13 +731,10 @@ impl GitRepo {
                     .trim_end_matches('\n')
                     .to_string();
 
-                match line.origin() {
-                    '-' => {
-                        if let Some(old_lineno) = line.old_lineno() {
-                            staged_deletions.insert((old_lineno as usize, content));
-                        }
+                if line.origin() == '-' {
+                    if let Some(old_lineno) = line.old_lineno() {
+                        staged_deletions.insert((old_lineno as usize, content));
                     }
-                    _ => {}
                 }
                 true
             }),

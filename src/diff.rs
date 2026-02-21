@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 #[derive(Debug, Clone)]
@@ -26,6 +26,7 @@ pub struct Hunk {
     pub staged: bool,
     /// Track which individual lines are staged (by index in lines vec)
     pub staged_line_indices: HashSet<usize>,
+    #[allow(dead_code)]
     pub id: HunkId,
 }
 
@@ -53,12 +54,7 @@ impl Hunk {
         pairs + unpaired
     }
 
-    pub fn new(
-        old_start: usize,
-        new_start: usize,
-        lines: Vec<String>,
-        file_path: &PathBuf,
-    ) -> Self {
+    pub fn new(old_start: usize, new_start: usize, lines: Vec<String>, file_path: &Path) -> Self {
         let id = HunkId::new(file_path, old_start, new_start, &lines);
         Self {
             old_start,
@@ -82,7 +78,7 @@ pub struct HunkId {
 }
 
 impl HunkId {
-    pub fn new(file_path: &PathBuf, old_start: usize, new_start: usize, lines: &[String]) -> Self {
+    pub fn new(file_path: &Path, old_start: usize, new_start: usize, lines: &[String]) -> Self {
         use std::collections::hash_map::DefaultHasher;
 
         let mut hasher = DefaultHasher::new();
@@ -92,7 +88,7 @@ impl HunkId {
         let content_hash = hasher.finish();
 
         Self {
-            file_path: file_path.clone(),
+            file_path: file_path.to_path_buf(),
             old_start,
             new_start,
             content_hash,
@@ -106,6 +102,7 @@ pub struct SeenTracker {
     seen_hunks: HashSet<HunkId>,
 }
 
+#[allow(dead_code)]
 impl SeenTracker {
     pub fn new() -> Self {
         Self {

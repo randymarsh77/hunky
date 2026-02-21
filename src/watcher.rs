@@ -62,10 +62,8 @@ impl FileWatcher {
                             } else {
                                 debug_log("Debouncing, too soon since last snapshot".to_string());
                             }
-                        } else {
-                            if crate::logger::filtered_events_enabled() {
-                                crate::logger::trace(format!("Filtered event: {:?}", event));
-                            }
+                        } else if crate::logger::filtered_events_enabled() {
+                            crate::logger::trace(format!("Filtered event: {:?}", event));
                         }
                     }
                     Ok(Err(e)) => {
