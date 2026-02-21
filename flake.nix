@@ -46,9 +46,12 @@
           hunky = hunkyPackage;
         };
 
-        apps.default = flake-utils.lib.mkApp {
-          drv = hunkyPackage;
+        apps.default = {
+          type = "app";
+          program = "${hunkyPackage}/bin/hunky";
         };
+        defaultApp = apps.default;
+        defaultPackage = hunkyPackage;
 
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
