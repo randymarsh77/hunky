@@ -64,6 +64,11 @@ const config = {
             position: 'left',
           },
           {
+            to: '/benchmarks',
+            label: 'Benchmarks',
+            position: 'left',
+          },
+          {
             href: 'https://github.com/randymarsh77/hunky',
             label: 'GitHub',
             position: 'right',
@@ -88,6 +93,10 @@ const config = {
               {
                 label: 'Coverage Report',
                 to: '/coverage',
+              },
+              {
+                label: 'Benchmarks',
+                to: '/benchmarks',
               },
               {
                 label: 'GitHub',

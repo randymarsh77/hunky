@@ -165,7 +165,7 @@ jobs:
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)
-    needs: coverage
+    needs: [coverage, benchmark]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -188,6 +188,15 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq lcov > /dev/null
           genhtml lcov.info --output-directory site/static/coverage-report --title "Hunky Coverage"
+
+      - name: Download benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark-results
+
+      - name: Process benchmark data
+        run: node site/scripts/process-benchmarks.mjs benchmark-results site/static https://randymarsh77.github.io/hunky
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
