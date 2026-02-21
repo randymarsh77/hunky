@@ -15,7 +15,10 @@ impl GitRepo {
             || (line.starts_with('-') && !line.starts_with("---"))
     }
 
-    fn hunk_line_coordinates(hunk: &Hunk, line_index: usize) -> Option<(Option<usize>, Option<usize>)> {
+    fn hunk_line_coordinates(
+        hunk: &Hunk,
+        line_index: usize,
+    ) -> Option<(Option<usize>, Option<usize>)> {
         if line_index >= hunk.lines.len() {
             return None;
         }
@@ -49,7 +52,10 @@ impl GitRepo {
         None
     }
 
-    fn single_line_patch_header(hunk: &Hunk, line_index: usize) -> Option<(usize, usize, usize, usize)> {
+    fn single_line_patch_header(
+        hunk: &Hunk,
+        line_index: usize,
+    ) -> Option<(usize, usize, usize, usize)> {
         if line_index >= hunk.lines.len() {
             return None;
         }
@@ -81,7 +87,12 @@ impl GitRepo {
         None
     }
 
-    fn build_single_line_patch(&self, hunk: &Hunk, line_index: usize, file_path: &Path) -> Result<String> {
+    fn build_single_line_patch(
+        &self,
+        hunk: &Hunk,
+        line_index: usize,
+        file_path: &Path,
+    ) -> Result<String> {
         // Verify the line exists
         if line_index >= hunk.lines.len() {
             return Err(anyhow::anyhow!("Line index out of bounds"));
@@ -96,8 +107,9 @@ impl GitRepo {
             return Err(anyhow::anyhow!("Can only patch + or - lines"));
         }
 
-        let (old_start, old_line_count, new_start, new_line_count) = Self::single_line_patch_header(hunk, line_index)
-            .ok_or_else(|| anyhow::anyhow!("Can only patch + or - lines"))?;
+        let (old_start, old_line_count, new_start, new_line_count) =
+            Self::single_line_patch_header(hunk, line_index)
+                .ok_or_else(|| anyhow::anyhow!("Can only patch + or - lines"))?;
 
         // Create a proper unified diff patch
         let mut patch = String::new();
@@ -187,7 +199,10 @@ impl GitRepo {
             .collect()
     }
 
-    fn sort_indices_desc_by_position(hunk: &Hunk, indices: &std::collections::HashSet<usize>) -> Vec<usize> {
+    fn sort_indices_desc_by_position(
+        hunk: &Hunk,
+        indices: &std::collections::HashSet<usize>,
+    ) -> Vec<usize> {
         let mut ordered: Vec<usize> = indices.iter().copied().collect();
         ordered.sort_by(|a, b| {
             let a_pos = Self::hunk_line_coordinates(hunk, *a)
@@ -329,7 +344,12 @@ impl GitRepo {
         desired_staged_indices: &std::collections::HashSet<usize>,
     ) -> Result<()> {
         let currently_staged = self.detect_staged_lines(hunk, file_path)?;
-        self.set_hunk_staged_lines_with_reset(hunk, file_path, desired_staged_indices, &currently_staged)
+        self.set_hunk_staged_lines_with_reset(
+            hunk,
+            file_path,
+            desired_staged_indices,
+            &currently_staged,
+        )
     }
 
     pub fn toggle_hunk_staging(&self, hunk: &Hunk, file_path: &Path) -> Result<bool> {
@@ -425,10 +445,10 @@ impl GitRepo {
             .workdir()
             .context("Repository has no working directory")?
             .to_path_buf();
-        
+
         Ok(Self { repo_path })
     }
-    
+
     pub fn repo_path(&self) -> &Path {
         &self.repo_path
     }
@@ -445,36 +465,36 @@ impl GitRepo {
 
         Ok(status)
     }
-    
+
     pub fn get_diff_snapshot(&self) -> Result<DiffSnapshot> {
         let repo = Repository::open(&self.repo_path)?;
-        
+
         // Get the diff between HEAD and working directory (includes both staged and unstaged)
         let mut diff_opts = DiffOptions::new();
         diff_opts.include_untracked(true);
         diff_opts.recurse_untracked_dirs(true);
-        
+
         // Get HEAD tree (handle empty repo case)
         let head_tree = match repo.head() {
             Ok(head) => head.peel_to_tree().ok(),
             Err(_) => None,
         };
-        
+
         // This shows all changes from HEAD to workdir (both staged and unstaged)
-        let diff = repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut diff_opts))?;
-        
+        let diff =
+            repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut diff_opts))?;
+
         let mut files = Vec::new();
-        
+
         diff.foreach(
             &mut |delta, _progress| {
                 let file_path = match delta.status() {
                     Delta::Added | Delta::Modified | Delta::Deleted => {
-                        delta.new_file().path()
-                            .or_else(|| delta.old_file().path())
+                        delta.new_file().path().or_else(|| delta.old_file().path())
                     }
                     _ => None,
                 };
-                
+
                 if let Some(path) = file_path {
                     files.push(FileChange {
                         path: path.to_path_buf(),
@@ -488,20 +508,20 @@ impl GitRepo {
             None,
             None,
         )?;
-        
+
         // Now get the actual diff content for each file
         for file in &mut files {
             if let Ok(hunks) = self.get_file_hunks(&repo, &file.path) {
                 file.hunks = hunks;
             }
         }
-        
+
         Ok(DiffSnapshot {
             timestamp: std::time::SystemTime::now(),
             files,
         })
     }
-    
+
     fn get_file_hunks(&self, repo: &Repository, path: &Path) -> Result<Vec<Hunk>> {
         let mut diff_opts = DiffOptions::new();
         diff_opts.pathspec(path);
@@ -514,7 +534,8 @@ impl GitRepo {
         };
 
         // Get diff from HEAD to workdir (includes both staged and unstaged)
-        let diff = repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut diff_opts))?;
+        let diff =
+            repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut diff_opts))?;
 
         let path_buf = path.to_path_buf();
 
@@ -593,20 +614,24 @@ impl GitRepo {
         index.write()?;
         Ok(())
     }
-    
+
     /// Stage a specific hunk by applying it as a patch
     pub fn stage_hunk(&self, hunk: &Hunk, file_path: &Path) -> Result<()> {
-        use std::process::Command;
         use std::io::Write;
-        
+        use std::process::Command;
+
         // Create a proper unified diff patch
         let mut patch = String::new();
-        
+
         // Diff header
-        patch.push_str(&format!("diff --git a/{} b/{}\n", file_path.display(), file_path.display()));
+        patch.push_str(&format!(
+            "diff --git a/{} b/{}\n",
+            file_path.display(),
+            file_path.display()
+        ));
         patch.push_str(&format!("--- a/{}\n", file_path.display()));
         patch.push_str(&format!("+++ b/{}\n", file_path.display()));
-        
+
         // Count actual add/remove lines for the hunk header
         let mut old_lines = 0;
         let mut new_lines = 0;
@@ -620,15 +645,13 @@ impl GitRepo {
                 new_lines += 1;
             }
         }
-        
+
         // Hunk header
-        patch.push_str(&format!("@@ -{},{} +{},{} @@\n", 
-            hunk.old_start, 
-            old_lines, 
-            hunk.new_start, 
-            new_lines
+        patch.push_str(&format!(
+            "@@ -{},{} +{},{} @@\n",
+            hunk.old_start, old_lines, hunk.new_start, new_lines
         ));
-        
+
         // Hunk content
         for line in &hunk.lines {
             patch.push_str(line);
@@ -636,7 +659,7 @@ impl GitRepo {
                 patch.push('\n');
             }
         }
-        
+
         // Use git apply to stage the hunk
         let mut child = Command::new("git")
             .arg("apply")
@@ -648,44 +671,48 @@ impl GitRepo {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()?;
-        
+
         if let Some(mut stdin) = child.stdin.take() {
             stdin.write_all(patch.as_bytes())?;
         }
-        
+
         let output = child.wait_with_output()?;
-        
+
         if !output.status.success() {
             let error_msg = String::from_utf8_lossy(&output.stderr);
             return Err(anyhow::anyhow!("Failed to stage hunk: {}", error_msg));
         }
-        
+
         Ok(())
     }
-    
+
     /// Detect which lines in a hunk are currently staged in the index
     /// Returns a HashSet of line indices that are staged
-    pub fn detect_staged_lines(&self, hunk: &Hunk, file_path: &Path) -> Result<std::collections::HashSet<usize>> {
+    pub fn detect_staged_lines(
+        &self,
+        hunk: &Hunk,
+        file_path: &Path,
+    ) -> Result<std::collections::HashSet<usize>> {
         use std::collections::HashSet;
-        
+
         let repo = Repository::open(&self.repo_path)?;
-        
+
         // Get diff from HEAD to index (only staged changes)
         let head_tree = match repo.head() {
             Ok(head) => head.peel_to_tree().ok(),
             Err(_) => None,
         };
-        
+
         let mut diff_opts = DiffOptions::new();
         diff_opts.pathspec(file_path);
-        
+
         let diff = repo.diff_tree_to_index(head_tree.as_ref(), None, Some(&mut diff_opts))?;
 
         let index = repo.index()?;
         let mut unstaged_opts = DiffOptions::new();
         unstaged_opts.pathspec(file_path);
         let unstaged_diff = repo.diff_index_to_workdir(Some(&index), Some(&mut unstaged_opts))?;
-        
+
         let mut staged_lines = HashSet::new();
 
         // Track exact staged deletions by (HEAD old line number, content_without_prefix).
@@ -757,12 +784,17 @@ impl GitRepo {
                 new_lineno += 1;
             }
         }
-        
+
         Ok(staged_lines)
     }
-    
+
     /// Stage a single line from a hunk
-    pub fn stage_single_line(&self, hunk: &Hunk, line_index: usize, file_path: &Path) -> Result<()> {
+    pub fn stage_single_line(
+        &self,
+        hunk: &Hunk,
+        line_index: usize,
+        file_path: &Path,
+    ) -> Result<()> {
         let selected_line = hunk
             .lines
             .get(line_index)
@@ -800,9 +832,14 @@ impl GitRepo {
 
         Ok(())
     }
-    
+
     /// Unstage a single line from a hunk
-    pub fn unstage_single_line(&self, hunk: &Hunk, line_index: usize, file_path: &Path) -> Result<()> {
+    pub fn unstage_single_line(
+        &self,
+        hunk: &Hunk,
+        line_index: usize,
+        file_path: &Path,
+    ) -> Result<()> {
         let selected_line = hunk
             .lines
             .get(line_index)
@@ -840,11 +877,11 @@ impl GitRepo {
 
         Ok(())
     }
-    
+
     /// Unstage an entire file
     pub fn unstage_file(&self, file_path: &Path) -> Result<()> {
         use std::process::Command;
-        
+
         let output = Command::new("git")
             .arg("reset")
             .arg("HEAD")
@@ -852,28 +889,32 @@ impl GitRepo {
             .arg(file_path)
             .current_dir(&self.repo_path)
             .output()?;
-        
+
         if !output.status.success() {
             let error_msg = String::from_utf8_lossy(&output.stderr);
             return Err(anyhow::anyhow!("Failed to unstage file: {}", error_msg));
         }
-        
+
         Ok(())
     }
-    
+
     /// Unstage a specific hunk by applying the reverse patch
     pub fn unstage_hunk(&self, hunk: &Hunk, file_path: &Path) -> Result<()> {
-        use std::process::Command;
         use std::io::Write;
-        
+        use std::process::Command;
+
         // Create a proper unified diff patch
         let mut patch = String::new();
-        
+
         // Diff header
-        patch.push_str(&format!("diff --git a/{} b/{}\n", file_path.display(), file_path.display()));
+        patch.push_str(&format!(
+            "diff --git a/{} b/{}\n",
+            file_path.display(),
+            file_path.display()
+        ));
         patch.push_str(&format!("--- a/{}\n", file_path.display()));
         patch.push_str(&format!("+++ b/{}\n", file_path.display()));
-        
+
         // Count actual add/remove lines for the hunk header
         let mut old_lines = 0;
         let mut new_lines = 0;
@@ -887,15 +928,13 @@ impl GitRepo {
                 new_lines += 1;
             }
         }
-        
+
         // Hunk header
-        patch.push_str(&format!("@@ -{},{} +{},{} @@\n", 
-            hunk.old_start, 
-            old_lines, 
-            hunk.new_start, 
-            new_lines
+        patch.push_str(&format!(
+            "@@ -{},{} +{},{} @@\n",
+            hunk.old_start, old_lines, hunk.new_start, new_lines
         ));
-        
+
         // Hunk content
         for line in &hunk.lines {
             patch.push_str(line);
@@ -903,7 +942,7 @@ impl GitRepo {
                 patch.push('\n');
             }
         }
-        
+
         // Use git apply --reverse to unstage the hunk
         let mut child = Command::new("git")
             .arg("apply")
@@ -916,18 +955,18 @@ impl GitRepo {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()?;
-        
+
         if let Some(mut stdin) = child.stdin.take() {
             stdin.write_all(patch.as_bytes())?;
         }
-        
+
         let output = child.wait_with_output()?;
-        
+
         if !output.status.success() {
             let error_msg = String::from_utf8_lossy(&output.stderr);
             return Err(anyhow::anyhow!("Failed to unstage hunk: {}", error_msg));
         }
-        
+
         Ok(())
     }
 }

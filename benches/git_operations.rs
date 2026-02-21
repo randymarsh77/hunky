@@ -15,11 +15,8 @@ impl BenchRepo {
             .duration_since(UNIX_EPOCH)
             .expect("failed to get system time")
             .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "hunky-bench-{}-{}",
-            std::process::id(),
-            unique
-        ));
+        let path =
+            std::env::temp_dir().join(format!("hunky-bench-{}-{}", std::process::id(), unique));
 
         fs::create_dir_all(&path).expect("failed to create temp directory");
 
@@ -126,7 +123,9 @@ fn bench_stage_file(c: &mut Criterion) {
 
     c.bench_function("stage_file", |b| {
         b.iter(|| {
-            git_repo.stage_file(file_path).expect("failed to stage file");
+            git_repo
+                .stage_file(file_path)
+                .expect("failed to stage file");
             // Reset for next iteration
             run_git(&repo.path, &["reset", "HEAD", "example.txt"]);
         });

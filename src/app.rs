@@ -25,21 +25,21 @@ fn debug_log(msg: String) {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum StreamSpeed {
-    Fast,    // 1x multiplier: 0.3s base + 0.2s per change
-    Medium,  // 2x multiplier: 0.5s base + 0.5s per change
-    Slow,    // 3x multiplier: 0.5s base + 1.0s per change
+    Fast,   // 1x multiplier: 0.3s base + 0.2s per change
+    Medium, // 2x multiplier: 0.5s base + 0.5s per change
+    Slow,   // 3x multiplier: 0.5s base + 1.0s per change
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum StreamingType {
-    Auto(StreamSpeed),  // Automatically advance with timing based on speed
-    Buffered,           // Manual advance with Space
+    Auto(StreamSpeed), // Automatically advance with timing based on speed
+    Buffered,          // Manual advance with Space
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Mode {
-    View,                      // View all current changes, full navigation
-    Streaming(StreamingType),  // Stream new hunks as they arrive
+    View,                     // View all current changes, full navigation
+    Streaming(StreamingType), // Stream new hunks as they arrive
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -52,9 +52,9 @@ pub enum FocusPane {
 impl StreamSpeed {
     pub fn duration_for_hunk(&self, change_count: usize) -> Duration {
         let (base_ms, per_change_ms) = match self {
-            StreamSpeed::Fast => (300, 200),     // 0.3s base + 0.2s per change
-            StreamSpeed::Medium => (500, 500),   // 0.5s base + 0.5s per change
-            StreamSpeed::Slow => (500, 1000),    // 0.5s base + 1.0s per change
+            StreamSpeed::Fast => (300, 200),   // 0.3s base + 0.2s per change
+            StreamSpeed::Medium => (500, 500), // 0.5s base + 0.5s per change
+            StreamSpeed::Slow => (500, 1000),  // 0.5s base + 1.0s per change
         };
         let total_ms = base_ms + (per_change_ms * change_count as u64);
         Duration::from_millis(total_ms)
@@ -95,45 +95,48 @@ pub struct App {
 impl App {
     pub async fn new(repo_path: &str) -> Result<Self> {
         let git_repo = GitRepo::new(repo_path)?;
-        
+
         // Get initial snapshot
         let mut initial_snapshot = git_repo.get_diff_snapshot()?;
-        
+
         // Detect staged lines for initial snapshot
         for file in &mut initial_snapshot.files {
             for hunk in &mut file.hunks {
                 // Detect which lines are actually staged in git's index
                 if let Ok(staged_indices) = git_repo.detect_staged_lines(hunk, &file.path) {
                     hunk.staged_line_indices = staged_indices;
-                    
+
                     // Check if all change lines are staged
-                    let total_change_lines = hunk.lines.iter()
+                    let total_change_lines = hunk
+                        .lines
+                        .iter()
                         .filter(|line| {
-                            (line.starts_with('+') && !line.starts_with("+++")) ||
-                            (line.starts_with('-') && !line.starts_with("---"))
+                            (line.starts_with('+') && !line.starts_with("+++"))
+                                || (line.starts_with('-') && !line.starts_with("---"))
                         })
                         .count();
-                    
-                    hunk.staged = hunk.staged_line_indices.len() == total_change_lines && total_change_lines > 0;
+
+                    hunk.staged = hunk.staged_line_indices.len() == total_change_lines
+                        && total_change_lines > 0;
                 }
             }
         }
-        
+
         // Set up file watcher
         let (tx, rx) = mpsc::unbounded_channel();
         let watcher = FileWatcher::new(git_repo.clone(), tx)?;
-        
+
         let app = Self {
             git_repo,
             snapshots: vec![initial_snapshot],
             current_snapshot_index: 0,
             current_file_index: 0,
             current_hunk_index: 0,
-            mode: Mode::View,  // Start in View mode
+            mode: Mode::View, // Start in View mode
             show_filenames_only: false,
             wrap_lines: false,
             show_help: false,
-            syntax_highlighting: true,  // Enabled by default
+            syntax_highlighting: true, // Enabled by default
             focus: FocusPane::HunkView,
             line_selection_mode: false,
             selected_line_index: 0,
@@ -142,18 +145,18 @@ impl App {
             last_auto_advance: Instant::now(),
             scroll_offset: 0,
             help_scroll_offset: 0,
-            streaming_start_snapshot: None,  // Not in streaming mode initially
+            streaming_start_snapshot: None, // Not in streaming mode initially
             show_extended_help: false,
             extended_help_scroll_offset: 0,
-            last_diff_viewport_height: 20,  // Reasonable default
-            last_help_viewport_height: 20,  // Reasonable default
+            last_diff_viewport_height: 20, // Reasonable default
+            last_help_viewport_height: 20, // Reasonable default
             needs_full_redraw: true,
             _watcher: watcher,
         };
-        
+
         Ok(app)
     }
-    
+
     pub async fn run(&mut self) -> Result<()> {
         // Setup terminal
         enable_raw_mode()?;
@@ -161,9 +164,9 @@ impl App {
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
-        
+
         let result = self.run_loop(&mut terminal).await;
-        
+
         // Restore terminal
         disable_raw_mode()?;
         execute!(
@@ -172,16 +175,19 @@ impl App {
             DisableMouseCapture
         )?;
         terminal.show_cursor()?;
-        
+
         result
     }
-    
+
     async fn run_loop<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
         loop {
             // Check for new snapshots
             while let Ok(mut snapshot) = self.snapshot_receiver.try_recv() {
-                debug_log(format!("Received snapshot with {} files", snapshot.files.len()));
-                
+                debug_log(format!(
+                    "Received snapshot with {} files",
+                    snapshot.files.len()
+                ));
+
                 // Detect staged lines for all hunks
                 for file in &mut snapshot.files {
                     for hunk in &mut file.hunks {
@@ -189,17 +195,20 @@ impl App {
                         match self.git_repo.detect_staged_lines(hunk, &file.path) {
                             Ok(staged_indices) => {
                                 hunk.staged_line_indices = staged_indices;
-                                
+
                                 // Check if all change lines are staged
-                                let total_change_lines = hunk.lines.iter()
+                                let total_change_lines = hunk
+                                    .lines
+                                    .iter()
                                     .filter(|line| {
-                                        (line.starts_with('+') && !line.starts_with("+++")) ||
-                                        (line.starts_with('-') && !line.starts_with("---"))
+                                        (line.starts_with('+') && !line.starts_with("+++"))
+                                            || (line.starts_with('-') && !line.starts_with("---"))
                                     })
                                     .count();
-                                
-                                hunk.staged = hunk.staged_line_indices.len() == total_change_lines && total_change_lines > 0;
-                                
+
+                                hunk.staged = hunk.staged_line_indices.len() == total_change_lines
+                                    && total_change_lines > 0;
+
                                 if !hunk.staged_line_indices.is_empty() {
                                     debug_log(format!("Detected {} staged lines in hunk (total: {}, fully staged: {})", 
                                         hunk.staged_line_indices.len(), total_change_lines, hunk.staged));
@@ -211,7 +220,7 @@ impl App {
                         }
                     }
                 }
-                
+
                 match self.mode {
                     Mode::View => {
                         // In View mode, update the current snapshot with new staged line info
@@ -225,8 +234,11 @@ impl App {
                         // In Streaming mode, only add snapshots that arrived after we entered streaming
                         // These are "new" changes to stream
                         self.snapshots.push(snapshot);
-                        debug_log(format!("Added new snapshot in Streaming mode. Total snapshots: {}", self.snapshots.len()));
-                        
+                        debug_log(format!(
+                            "Added new snapshot in Streaming mode. Total snapshots: {}",
+                            self.snapshots.len()
+                        ));
+
                         // If we're on an empty/old snapshot, advance to the new one
                         if let Some(start_idx) = self.streaming_start_snapshot {
                             if self.current_snapshot_index <= start_idx {
@@ -239,12 +251,13 @@ impl App {
                     }
                 }
             }
-            
+
             // Auto-advance in Streaming Auto mode
             if let Mode::Streaming(StreamingType::Auto(speed)) = self.mode {
                 let elapsed = self.last_auto_advance.elapsed();
                 // Get current hunk change count (not including context lines) for duration calculation
-                let change_count = self.current_file()
+                let change_count = self
+                    .current_file()
                     .and_then(|f| f.hunks.get(self.current_hunk_index))
                     .map(|h| h.count_changes())
                     .unwrap_or(1); // Default to 1 change if no hunk
@@ -253,7 +266,7 @@ impl App {
                     self.last_auto_advance = Instant::now();
                 }
             }
-            
+
             // Draw UI
             if self.needs_full_redraw {
                 terminal.clear()?;
@@ -268,11 +281,11 @@ impl App {
                 diff_viewport_height = diff_h;
                 help_viewport_height = help_h;
             })?;
-            
+
             // Cache viewport heights for next frame's pre-clamping
             self.last_diff_viewport_height = diff_viewport_height;
             self.last_help_viewport_height = help_viewport_height;
-            
+
             // Clamp scroll offsets after drawing (still needed for content size changes)
             self.clamp_scroll_offset(diff_viewport_height);
             if self.show_help {
@@ -281,13 +294,15 @@ impl App {
             if self.show_extended_help {
                 self.clamp_extended_help_scroll_offset(help_viewport_height);
             }
-            
+
             // Handle input (non-blocking)
             if event::poll(Duration::from_millis(50))? {
                 if let Event::Key(key) = event::read()? {
                     match key.code {
                         KeyCode::Char('q') | KeyCode::Char('Q') => break,
-                        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
+                        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            break
+                        }
                         KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::SHIFT) => {
                             // Shift+Space goes to previous hunk (works in View and Streaming Buffered)
                             debug_log(format!("Shift+Space pressed, mode: {:?}", self.mode));
@@ -340,7 +355,8 @@ impl App {
                                 if content_height > viewport_height {
                                     let max_scroll = content_height.saturating_sub(viewport_height);
                                     if self.extended_help_scroll_offset < max_scroll {
-                                        self.extended_help_scroll_offset = self.extended_help_scroll_offset.saturating_add(1);
+                                        self.extended_help_scroll_offset =
+                                            self.extended_help_scroll_offset.saturating_add(1);
                                     }
                                 }
                             } else {
@@ -356,12 +372,15 @@ impl App {
                                             self.next_change_line();
                                         } else {
                                             // Scroll down in hunk view - pre-clamp to prevent flashing
-                                            let content_height = self.current_hunk_content_height() as u16;
+                                            let content_height =
+                                                self.current_hunk_content_height() as u16;
                                             let viewport_height = self.last_diff_viewport_height;
                                             if content_height > viewport_height {
-                                                let max_scroll = content_height.saturating_sub(viewport_height);
+                                                let max_scroll =
+                                                    content_height.saturating_sub(viewport_height);
                                                 if self.scroll_offset < max_scroll {
-                                                    self.scroll_offset = self.scroll_offset.saturating_add(1);
+                                                    self.scroll_offset =
+                                                        self.scroll_offset.saturating_add(1);
                                                 }
                                             }
                                         }
@@ -371,9 +390,11 @@ impl App {
                                         let content_height = self.help_content_height() as u16;
                                         let viewport_height = self.last_help_viewport_height;
                                         if content_height > viewport_height {
-                                            let max_scroll = content_height.saturating_sub(viewport_height);
+                                            let max_scroll =
+                                                content_height.saturating_sub(viewport_height);
                                             if self.help_scroll_offset < max_scroll {
-                                                self.help_scroll_offset = self.help_scroll_offset.saturating_add(1);
+                                                self.help_scroll_offset =
+                                                    self.help_scroll_offset.saturating_add(1);
                                             }
                                         }
                                     }
@@ -383,7 +404,8 @@ impl App {
                         KeyCode::Char('k') | KeyCode::Up => {
                             if self.show_extended_help {
                                 // Scroll up in extended help
-                                self.extended_help_scroll_offset = self.extended_help_scroll_offset.saturating_sub(1);
+                                self.extended_help_scroll_offset =
+                                    self.extended_help_scroll_offset.saturating_sub(1);
                             } else {
                                 match self.focus {
                                     FocusPane::FileList => {
@@ -397,12 +419,14 @@ impl App {
                                             self.previous_change_line();
                                         } else {
                                             // Scroll up in hunk view
-                                            self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                                            self.scroll_offset =
+                                                self.scroll_offset.saturating_sub(1);
                                         }
                                     }
                                     FocusPane::HelpSidebar => {
                                         // Scroll up in help sidebar
-                                        self.help_scroll_offset = self.help_scroll_offset.saturating_sub(1);
+                                        self.help_scroll_offset =
+                                            self.help_scroll_offset.saturating_sub(1);
                                     }
                                 }
                             }
@@ -433,7 +457,9 @@ impl App {
                             // Toggle syntax highlighting
                             self.syntax_highlighting = !self.syntax_highlighting;
                         }
-                        KeyCode::Char('l') | KeyCode::Char('L') => self.toggle_line_selection_mode(),
+                        KeyCode::Char('l') | KeyCode::Char('L') => {
+                            self.toggle_line_selection_mode()
+                        }
                         KeyCode::Char('h') => {
                             // Toggle help sidebar
                             self.show_help = !self.show_help;
@@ -463,40 +489,40 @@ impl App {
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     fn advance_hunk(&mut self) {
         if self.snapshots.is_empty() {
             return;
         }
-        
+
         let snapshot = &self.snapshots[self.current_snapshot_index];
         if snapshot.files.is_empty() {
             return;
         }
-        
+
         // Clear line memory for current hunk before moving
         let old_hunk_key = (self.current_file_index, self.current_hunk_index);
         self.hunk_line_memory.remove(&old_hunk_key);
-        
+
         // Bounds check
         if self.current_file_index >= snapshot.files.len() {
             return;
         }
-        
+
         let file_hunks_len = snapshot.files[self.current_file_index].hunks.len();
-        
+
         // Advance to next hunk
         self.current_hunk_index += 1;
         self.scroll_offset = 0;
-        
+
         // If we've gone past the last hunk in this file, move to next file
         if self.current_hunk_index >= file_hunks_len {
             self.current_file_index += 1;
             self.current_hunk_index = 0;
-            
+
             // If no more files, behavior depends on mode
             if self.current_file_index >= snapshot.files.len() {
                 if self.mode == Mode::View {
@@ -513,30 +539,33 @@ impl App {
             }
         }
     }
-    
+
     fn previous_hunk(&mut self) {
         debug_log("previous_hunk called".to_string());
         if self.snapshots.is_empty() {
             debug_log("No snapshots, returning".to_string());
             return;
         }
-        
+
         // Check if we have files before proceeding
         let files_len = self.snapshots[self.current_snapshot_index].files.len();
         if files_len == 0 {
             debug_log("No files in snapshot, returning".to_string());
             return;
         }
-        
-        debug_log(format!("Before: file_idx={}, hunk_idx={}", self.current_file_index, self.current_hunk_index));
-        
+
+        debug_log(format!(
+            "Before: file_idx={}, hunk_idx={}",
+            self.current_file_index, self.current_hunk_index
+        ));
+
         // Clear line memory for current hunk before moving
         let old_hunk_key = (self.current_file_index, self.current_hunk_index);
         self.hunk_line_memory.remove(&old_hunk_key);
-        
+
         // Reset scroll when moving to a different hunk
         self.scroll_offset = 0;
-        
+
         // If we're at the first hunk of the current file, go to previous file's last hunk
         if self.current_hunk_index == 0 {
             if self.mode != Mode::View && self.current_file_index == 0 {
@@ -546,7 +575,10 @@ impl App {
                 // Set to the last hunk of the new file
                 let snapshot = &self.snapshots[self.current_snapshot_index];
                 if self.current_file_index < snapshot.files.len() {
-                    let last_hunk_index = snapshot.files[self.current_file_index].hunks.len().saturating_sub(1);
+                    let last_hunk_index = snapshot.files[self.current_file_index]
+                        .hunks
+                        .len()
+                        .saturating_sub(1);
                     self.current_hunk_index = last_hunk_index;
                 }
             }
@@ -554,45 +586,48 @@ impl App {
             // Just go back one hunk in the current file
             self.current_hunk_index = self.current_hunk_index.saturating_sub(1);
         }
-        
-        debug_log(format!("After: file_idx={}, hunk_idx={}", self.current_file_index, self.current_hunk_index));
+
+        debug_log(format!(
+            "After: file_idx={}, hunk_idx={}",
+            self.current_file_index, self.current_hunk_index
+        ));
     }
-    
+
     fn next_file(&mut self) {
         if self.snapshots.is_empty() {
             return;
         }
-        
+
         let snapshot = &self.snapshots[self.current_snapshot_index];
         if snapshot.files.is_empty() {
             return;
         }
-        
+
         // Clear line memory for old file
         let old_file_index = self.current_file_index;
-        
+
         // Calculate next file index before clearing memory
         let files_len = snapshot.files.len();
         self.current_file_index = (self.current_file_index + 1) % files_len;
         self.current_hunk_index = 0;
-        
+
         // Now clear the memory for the old file (after we're done with snapshot)
         self.clear_line_memory_for_file(old_file_index);
     }
-    
+
     fn previous_file(&mut self) {
         if self.snapshots.is_empty() {
             return;
         }
-        
+
         let snapshot = &self.snapshots[self.current_snapshot_index];
         if snapshot.files.is_empty() {
             return;
         }
-        
+
         // Clear line memory for old file
         let old_file_index = self.current_file_index;
-        
+
         // Calculate previous file index before clearing memory
         let files_len = snapshot.files.len();
         if self.current_file_index == 0 {
@@ -601,29 +636,32 @@ impl App {
             self.current_file_index -= 1;
         }
         self.current_hunk_index = 0;
-        
+
         // Now clear the memory for the old file (after we're done with snapshot)
         self.clear_line_memory_for_file(old_file_index);
     }
-    
+
     fn next_change_line(&mut self) {
         if let Some(snapshot) = self.current_snapshot() {
             if let Some(file) = snapshot.files.get(self.current_file_index) {
                 if let Some(hunk) = file.hunks.get(self.current_hunk_index) {
                     // Build list of change lines (filter same way as UI does)
-                    let changes: Vec<(usize, &String)> = hunk.lines.iter()
+                    let changes: Vec<(usize, &String)> = hunk
+                        .lines
+                        .iter()
                         .enumerate()
                         .filter(|(_, line)| {
-                            (line.starts_with('+') && !line.starts_with("+++")) ||
-                            (line.starts_with('-') && !line.starts_with("---"))
+                            (line.starts_with('+') && !line.starts_with("+++"))
+                                || (line.starts_with('-') && !line.starts_with("---"))
                         })
                         .collect();
-                    
+
                     if !changes.is_empty() {
                         // Find where we are in the changes list
-                        let current_in_changes = changes.iter()
+                        let current_in_changes = changes
+                            .iter()
                             .position(|(idx, _)| *idx == self.selected_line_index);
-                        
+
                         match current_in_changes {
                             Some(pos) if pos + 1 < changes.len() => {
                                 // Move to next change
@@ -642,25 +680,28 @@ impl App {
             }
         }
     }
-    
+
     fn previous_change_line(&mut self) {
         if let Some(snapshot) = self.current_snapshot() {
             if let Some(file) = snapshot.files.get(self.current_file_index) {
                 if let Some(hunk) = file.hunks.get(self.current_hunk_index) {
                     // Build list of change lines (filter same way as UI does)
-                    let changes: Vec<(usize, &String)> = hunk.lines.iter()
+                    let changes: Vec<(usize, &String)> = hunk
+                        .lines
+                        .iter()
                         .enumerate()
                         .filter(|(_, line)| {
-                            (line.starts_with('+') && !line.starts_with("+++")) ||
-                            (line.starts_with('-') && !line.starts_with("---"))
+                            (line.starts_with('+') && !line.starts_with("+++"))
+                                || (line.starts_with('-') && !line.starts_with("---"))
                         })
                         .collect();
-                    
+
                     if !changes.is_empty() {
                         // Find where we are in the changes list
-                        let current_in_changes = changes.iter()
+                        let current_in_changes = changes
+                            .iter()
                             .position(|(idx, _)| *idx == self.selected_line_index);
-                        
+
                         match current_in_changes {
                             Some(pos) if pos > 0 => {
                                 // Move to previous change
@@ -679,15 +720,16 @@ impl App {
             }
         }
     }
-    
+
     fn select_first_change_line(&mut self) {
         if let Some(snapshot) = self.current_snapshot() {
             if let Some(file) = snapshot.files.get(self.current_file_index) {
                 if let Some(hunk) = file.hunks.get(self.current_hunk_index) {
                     // Find first change line
                     for (idx, line) in hunk.lines.iter().enumerate() {
-                        if (line.starts_with('+') && !line.starts_with("+++")) ||
-                           (line.starts_with('-') && !line.starts_with("---")) {
+                        if (line.starts_with('+') && !line.starts_with("+++"))
+                            || (line.starts_with('-') && !line.starts_with("---"))
+                        {
                             self.selected_line_index = idx;
                             return;
                         }
@@ -698,10 +740,11 @@ impl App {
         // Fallback
         self.selected_line_index = 0;
     }
-    
+
     fn clear_line_memory_for_file(&mut self, file_index: usize) {
         // Remove all entries for this file
-        self.hunk_line_memory.retain(|(f_idx, _), _| *f_idx != file_index);
+        self.hunk_line_memory
+            .retain(|(f_idx, _), _| *f_idx != file_index);
     }
 
     fn cycle_mode(&mut self) {
@@ -754,7 +797,8 @@ impl App {
             && self.line_selection_mode
         {
             let hunk_key = (self.current_file_index, self.current_hunk_index);
-            self.hunk_line_memory.insert(hunk_key, self.selected_line_index);
+            self.hunk_line_memory
+                .insert(hunk_key, self.selected_line_index);
             self.line_selection_mode = false;
         }
     }
@@ -778,7 +822,8 @@ impl App {
             && self.line_selection_mode
         {
             let hunk_key = (self.current_file_index, self.current_hunk_index);
-            self.hunk_line_memory.insert(hunk_key, self.selected_line_index);
+            self.hunk_line_memory
+                .insert(hunk_key, self.selected_line_index);
             self.line_selection_mode = false;
         }
     }
@@ -802,7 +847,7 @@ impl App {
             }
         }
     }
-    
+
     fn stage_current_selection(&mut self) {
         let mut refresh_needed = false;
 
@@ -815,20 +860,36 @@ impl App {
                         if let Some(file) = snapshot.files.get_mut(self.current_file_index) {
                             if let Some(hunk) = file.hunks.get_mut(self.current_hunk_index) {
                                 // Get the selected line
-                                if let Some(selected_line) = hunk.lines.get(self.selected_line_index) {
+                                if let Some(selected_line) =
+                                    hunk.lines.get(self.selected_line_index)
+                                {
                                     // Only stage change lines (+ or -)
-                                    if (selected_line.starts_with('+') && !selected_line.starts_with("+++")) ||
-                                       (selected_line.starts_with('-') && !selected_line.starts_with("---")) {
+                                    if (selected_line.starts_with('+')
+                                        && !selected_line.starts_with("+++"))
+                                        || (selected_line.starts_with('-')
+                                            && !selected_line.starts_with("---"))
+                                    {
                                         // Check if line is already staged
-                                        let is_staged = hunk.staged_line_indices.contains(&self.selected_line_index);
-                                        
+                                        let is_staged = hunk
+                                            .staged_line_indices
+                                            .contains(&self.selected_line_index);
+
                                         if is_staged {
                                             // Unstage the single line
-                                            match self.git_repo.unstage_single_line(hunk, self.selected_line_index, &file.path) {
+                                            match self.git_repo.unstage_single_line(
+                                                hunk,
+                                                self.selected_line_index,
+                                                &file.path,
+                                            ) {
                                                 Ok(_) => {
                                                     // Remove this line from staged indices
-                                                    hunk.staged_line_indices.remove(&self.selected_line_index);
-                                                    debug_log(format!("Unstaged line {} in {}", self.selected_line_index, file.path.display()));
+                                                    hunk.staged_line_indices
+                                                        .remove(&self.selected_line_index);
+                                                    debug_log(format!(
+                                                        "Unstaged line {} in {}",
+                                                        self.selected_line_index,
+                                                        file.path.display()
+                                                    ));
                                                     refresh_needed = true;
                                                 }
                                                 Err(e) => {
@@ -837,11 +898,20 @@ impl App {
                                             }
                                         } else {
                                             // Stage the single line
-                                            match self.git_repo.stage_single_line(hunk, self.selected_line_index, &file.path) {
+                                            match self.git_repo.stage_single_line(
+                                                hunk,
+                                                self.selected_line_index,
+                                                &file.path,
+                                            ) {
                                                 Ok(_) => {
                                                     // Mark this line as staged
-                                                    hunk.staged_line_indices.insert(self.selected_line_index);
-                                                    debug_log(format!("Staged line {} in {}", self.selected_line_index, file.path.display()));
+                                                    hunk.staged_line_indices
+                                                        .insert(self.selected_line_index);
+                                                    debug_log(format!(
+                                                        "Staged line {} in {}",
+                                                        self.selected_line_index,
+                                                        file.path.display()
+                                                    ));
                                                     refresh_needed = true;
                                                 }
                                                 Err(e) => {
@@ -862,9 +932,15 @@ impl App {
                                 match self.git_repo.toggle_hunk_staging(hunk, &file.path) {
                                     Ok(is_staged_now) => {
                                         if is_staged_now {
-                                            debug_log(format!("Staged hunk in {}", file.path.display()));
+                                            debug_log(format!(
+                                                "Staged hunk in {}",
+                                                file.path.display()
+                                            ));
                                         } else {
-                                            debug_log(format!("Unstaged hunk in {}", file.path.display()));
+                                            debug_log(format!(
+                                                "Unstaged hunk in {}",
+                                                file.path.display()
+                                            ));
                                         }
                                         refresh_needed = true;
                                     }
@@ -883,7 +959,7 @@ impl App {
                     if let Some(file) = snapshot.files.get_mut(self.current_file_index) {
                         // Check if any hunks are staged
                         let any_staged = file.hunks.iter().any(|h| h.staged);
-                        
+
                         if any_staged {
                             // Unstage the file
                             match self.git_repo.unstage_file(&file.path) {
@@ -910,8 +986,10 @@ impl App {
                                         // Mark all change lines as staged
                                         hunk.staged_line_indices.clear();
                                         for (idx, line) in hunk.lines.iter().enumerate() {
-                                            if (line.starts_with('+') && !line.starts_with("+++")) ||
-                                               (line.starts_with('-') && !line.starts_with("---")) {
+                                            if (line.starts_with('+') && !line.starts_with("+++"))
+                                                || (line.starts_with('-')
+                                                    && !line.starts_with("---"))
+                                            {
                                                 hunk.staged_line_indices.insert(idx);
                                             }
                                         }
@@ -1036,7 +1114,10 @@ impl App {
                 }
             }
             Err(e) => {
-                debug_log(format!("Failed to refresh snapshot after staging action: {}", e));
+                debug_log(format!(
+                    "Failed to refresh snapshot after staging action: {}",
+                    e
+                ));
             }
         }
     }
@@ -1052,7 +1133,7 @@ impl App {
                         .filter_map(|(idx, line)| {
                             ((line.starts_with('+') && !line.starts_with("+++"))
                                 || (line.starts_with('-') && !line.starts_with("---")))
-                                .then_some(idx)
+                            .then_some(idx)
                         })
                         .collect();
 
@@ -1080,73 +1161,71 @@ impl App {
 
         self.selected_line_index = 0;
     }
-    
+
     pub fn current_snapshot(&self) -> Option<&DiffSnapshot> {
         self.snapshots.get(self.current_snapshot_index)
     }
-    
+
     pub fn current_file(&self) -> Option<&FileChange> {
-        self.current_snapshot()?
-            .files
-            .get(self.current_file_index)
+        self.current_snapshot()?.files.get(self.current_file_index)
     }
-    
+
     pub fn current_file_index(&self) -> usize {
         self.current_file_index
     }
-    
+
     pub fn current_hunk_index(&self) -> usize {
         self.current_hunk_index
     }
-    
+
     pub fn scroll_offset(&self) -> u16 {
         self.scroll_offset
     }
-    
+
     pub fn help_scroll_offset(&self) -> u16 {
         self.help_scroll_offset
     }
-    
+
     pub fn mode(&self) -> Mode {
         self.mode
     }
-    
+
     pub fn line_selection_mode(&self) -> bool {
         self.line_selection_mode
     }
-    
+
     pub fn selected_line_index(&self) -> usize {
         self.selected_line_index
     }
-    
+
     pub fn focus(&self) -> FocusPane {
         self.focus
     }
-    
+
     pub fn show_filenames_only(&self) -> bool {
         self.show_filenames_only
     }
-    
+
     pub fn wrap_lines(&self) -> bool {
         self.wrap_lines
     }
-    
+
     pub fn show_help(&self) -> bool {
         self.show_help
     }
-    
+
     pub fn show_extended_help(&self) -> bool {
         self.show_extended_help
     }
-    
+
     pub fn extended_help_scroll_offset(&self) -> u16 {
         self.extended_help_scroll_offset
     }
-    
+
     pub fn syntax_highlighting(&self) -> bool {
         self.syntax_highlighting
     }
-    
+
     /// Get the height (line count) of the current hunk content
     pub fn current_hunk_content_height(&self) -> usize {
         if let Some(snapshot) = self.current_snapshot() {
@@ -1157,7 +1236,7 @@ impl App {
                     let mut changes = 0;
                     let mut context_after = 0;
                     let mut in_changes = false;
-                    
+
                     for line in &hunk.lines {
                         if line.starts_with('+') || line.starts_with('-') {
                             in_changes = true;
@@ -1168,23 +1247,23 @@ impl App {
                             context_after += 1;
                         }
                     }
-                    
+
                     // Limit context to 5 lines each
                     let context_before_shown = context_before.min(5);
                     let context_after_shown = context_after.min(5);
-                    
+
                     return 2 + 1 + 1 + 1 + context_before_shown + changes + context_after_shown;
                 }
             }
         }
         0
     }
-    
+
     /// Get the height (line count) of the help sidebar content
     pub fn help_content_height(&self) -> usize {
         27 // Number of help lines in draw_help_sidebar
     }
-    
+
     /// Clamp scroll offset to valid range based on content and viewport height
     pub fn clamp_scroll_offset(&mut self, viewport_height: u16) {
         let content_height = self.current_hunk_content_height() as u16;
@@ -1195,7 +1274,7 @@ impl App {
             self.scroll_offset = 0;
         }
     }
-    
+
     /// Clamp help scroll offset to valid range based on content and viewport height
     pub fn clamp_help_scroll_offset(&mut self, viewport_height: u16) {
         let content_height = self.help_content_height() as u16;
@@ -1206,12 +1285,12 @@ impl App {
             self.help_scroll_offset = 0;
         }
     }
-    
+
     /// Get the height (line count) of the extended help content
     pub fn extended_help_content_height(&self) -> usize {
         108 // Exact number of lines in draw_extended_help
     }
-    
+
     /// Clamp extended help scroll offset to valid range based on content and viewport height
     pub fn clamp_extended_help_scroll_offset(&mut self, viewport_height: u16) {
         let content_height = self.extended_help_content_height() as u16;
@@ -1599,42 +1678,42 @@ mod tests {
         assert!(cached_after_file_unstage.trim().is_empty());
     }
 
-        #[tokio::test]
-        #[ignore = "Known flaky hunk restage path; run explicitly during debugging"]
-        async fn hunk_toggle_can_restage_after_unstage_on_simple_file() {
-                let repo = TestRepo::new();
-                repo.write_file("example.txt", "line 1\nline 2\nline 3\n");
-                repo.commit_all("initial");
-                repo.write_file("example.txt", "line 1\nline two updated\nline 3\n");
+    #[tokio::test]
+    #[ignore = "Known flaky hunk restage path; run explicitly during debugging"]
+    async fn hunk_toggle_can_restage_after_unstage_on_simple_file() {
+        let repo = TestRepo::new();
+        repo.write_file("example.txt", "line 1\nline 2\nline 3\n");
+        repo.commit_all("initial");
+        repo.write_file("example.txt", "line 1\nline two updated\nline 3\n");
 
-                let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
-                        .await
-                        .expect("failed to create app");
-                app.current_snapshot_index = 0;
-                app.current_file_index = 0;
-                app.current_hunk_index = 0;
-                app.focus = FocusPane::HunkView;
-                app.line_selection_mode = false;
+        let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+            .await
+            .expect("failed to create app");
+        app.current_snapshot_index = 0;
+        app.current_file_index = 0;
+        app.current_hunk_index = 0;
+        app.focus = FocusPane::HunkView;
+        app.line_selection_mode = false;
 
-                // Stage hunk
-                app.stage_current_selection();
-                let cached_after_stage = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
-                assert!(cached_after_stage.contains("example.txt"));
+        // Stage hunk
+        app.stage_current_selection();
+        let cached_after_stage = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
+        assert!(cached_after_stage.contains("example.txt"));
 
-                // Unstage hunk
-                app.stage_current_selection();
-                let cached_after_unstage = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
-                assert!(cached_after_unstage.trim().is_empty());
+        // Unstage hunk
+        app.stage_current_selection();
+        let cached_after_unstage = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
+        assert!(cached_after_unstage.trim().is_empty());
 
-                // Restage hunk (regression target)
-                app.stage_current_selection();
-                let cached_after_restage = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
-                assert!(
-                    cached_after_restage.contains("example.txt"),
-                    "expected example.txt to be restaged, got:\n{}",
-                        cached_after_restage
-                );
-        }
+        // Restage hunk (regression target)
+        app.stage_current_selection();
+        let cached_after_restage = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
+        assert!(
+            cached_after_restage.contains("example.txt"),
+            "expected example.txt to be restaged, got:\n{}",
+            cached_after_restage
+        );
+    }
 
     #[tokio::test]
     async fn ui_draw_renders_file_list_variants() {
@@ -1774,7 +1853,8 @@ mod tests {
             .await
             .expect("failed to create app");
 
-        let mut terminal = Terminal::new(TestBackend::new(36, 20)).expect("failed to create terminal");
+        let mut terminal =
+            Terminal::new(TestBackend::new(36, 20)).expect("failed to create terminal");
         terminal
             .draw(|frame| {
                 UI::new(&app).draw(frame);

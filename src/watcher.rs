@@ -22,20 +22,20 @@ impl FileWatcher {
         snapshot_sender: mpsc::UnboundedSender<DiffSnapshot>,
     ) -> Result<Self> {
         let repo_path = git_repo.repo_path().to_path_buf();
-        
+
         let (tx, rx) = std::sync::mpsc::channel();
-        
+
         let mut watcher = RecommendedWatcher::new(tx, Config::default())?;
-        
+
         watcher.watch(repo_path.as_ref(), RecursiveMode::Recursive)?;
-        
+
         // Spawn a task to handle file system events
         tokio::spawn(async move {
             let mut last_snapshot_time = std::time::Instant::now();
             let debounce_duration = std::time::Duration::from_millis(500);
-            
+
             debug_log(format!("File watcher started for {:?}", repo_path));
-            
+
             loop {
                 match rx.recv() {
                     Ok(Ok(event)) => {
@@ -47,7 +47,10 @@ impl FileWatcher {
                             let now = std::time::Instant::now();
                             if now.duration_since(last_snapshot_time) >= debounce_duration {
                                 if let Ok(snapshot) = git_repo.get_diff_snapshot() {
-                                    debug_log(format!("Created snapshot with {} files", snapshot.files.len()));
+                                    debug_log(format!(
+                                        "Created snapshot with {} files",
+                                        snapshot.files.len()
+                                    ));
                                     // Only send if there are actual changes
                                     if !snapshot.files.is_empty() {
                                         let _ = snapshot_sender.send(snapshot);
@@ -72,14 +75,14 @@ impl FileWatcher {
                 }
             }
         });
-        
+
         Ok(Self { _watcher: watcher })
     }
 }
 
 fn should_process_event(event: &Event, repo_path: &Path) -> bool {
     use notify::EventKind;
-    
+
     // Filter out events we don't care about
     match event.kind {
         EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
@@ -91,7 +94,7 @@ fn should_process_event(event: &Event, repo_path: &Path) -> bool {
                 if path.ends_with(".git/index") {
                     return true;
                 }
-                
+
                 // Check if it's a working directory file (not in .git)
                 let rel_path = match path.strip_prefix(repo_path) {
                     Ok(p) => p,

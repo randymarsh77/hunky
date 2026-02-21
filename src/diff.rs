@@ -34,11 +34,11 @@ impl Hunk {
     pub fn format(&self) -> String {
         self.lines.join("")
     }
-    
+
     pub fn count_changes(&self) -> usize {
         let mut add_lines = 0;
         let mut remove_lines = 0;
-        
+
         for line in &self.lines {
             if line.starts_with('+') && !line.starts_with("+++") {
                 add_lines += 1;
@@ -46,14 +46,19 @@ impl Hunk {
                 remove_lines += 1;
             }
         }
-        
+
         // Count pairs of add/remove as 1 change, plus any unpaired lines
         let pairs = add_lines.min(remove_lines);
         let unpaired = (add_lines + remove_lines) - (2 * pairs);
         pairs + unpaired
     }
-    
-    pub fn new(old_start: usize, new_start: usize, lines: Vec<String>, file_path: &PathBuf) -> Self {
+
+    pub fn new(
+        old_start: usize,
+        new_start: usize,
+        lines: Vec<String>,
+        file_path: &PathBuf,
+    ) -> Self {
         let id = HunkId::new(file_path, old_start, new_start, &lines);
         Self {
             old_start,
@@ -79,13 +84,13 @@ pub struct HunkId {
 impl HunkId {
     pub fn new(file_path: &PathBuf, old_start: usize, new_start: usize, lines: &[String]) -> Self {
         use std::collections::hash_map::DefaultHasher;
-        
+
         let mut hasher = DefaultHasher::new();
         for line in lines {
             line.hash(&mut hasher);
         }
         let content_hash = hasher.finish();
-        
+
         Self {
             file_path: file_path.clone(),
             old_start,
@@ -107,22 +112,23 @@ impl SeenTracker {
             seen_hunks: HashSet::new(),
         }
     }
-    
+
     pub fn mark_seen(&mut self, hunk_id: &HunkId) {
         self.seen_hunks.insert(hunk_id.clone());
     }
-    
+
     pub fn is_seen(&self, hunk_id: &HunkId) -> bool {
         self.seen_hunks.contains(hunk_id)
     }
-    
+
     pub fn clear(&mut self) {
         self.seen_hunks.clear();
     }
-    
+
     #[allow(dead_code)]
     pub fn remove_file_hunks(&mut self, file_path: &PathBuf) {
-        self.seen_hunks.retain(|hunk_id| &hunk_id.file_path != file_path);
+        self.seen_hunks
+            .retain(|hunk_id| &hunk_id.file_path != file_path);
     }
 }
 

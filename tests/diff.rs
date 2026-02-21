@@ -20,9 +20,18 @@ fn count_changes_pairs_adds_and_removes() {
 #[test]
 fn hunk_id_changes_when_content_changes() {
     let file_path = PathBuf::from("src/main.rs");
-    let base = HunkId::new(&file_path, 10, 10, &["-a\n".to_string(), "+b\n".to_string()]);
-    let changed =
-        HunkId::new(&file_path, 10, 10, &["-a\n".to_string(), "+c\n".to_string()]);
+    let base = HunkId::new(
+        &file_path,
+        10,
+        10,
+        &["-a\n".to_string(), "+b\n".to_string()],
+    );
+    let changed = HunkId::new(
+        &file_path,
+        10,
+        10,
+        &["-a\n".to_string(), "+c\n".to_string()],
+    );
 
     assert_ne!(base, changed);
 }

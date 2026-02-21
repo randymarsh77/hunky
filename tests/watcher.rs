@@ -1,5 +1,8 @@
 use super::*;
-use notify::{event::{CreateKind, ModifyKind, RemoveKind}, EventKind};
+use notify::{
+    event::{CreateKind, ModifyKind, RemoveKind},
+    EventKind,
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -12,8 +15,8 @@ const WATCHER_RECV_TIMEOUT: Duration = Duration::from_secs(3);
 #[test]
 fn processes_working_tree_modifications() {
     let repo_path = PathBuf::from("/tmp/repo");
-    let event = Event::new(EventKind::Modify(ModifyKind::Any))
-        .add_path(repo_path.join("src/main.rs"));
+    let event =
+        Event::new(EventKind::Modify(ModifyKind::Any)).add_path(repo_path.join("src/main.rs"));
 
     assert!(should_process_event(&event, &repo_path));
 }
@@ -47,8 +50,8 @@ fn ignores_gitignored_files() {
     repo.write_file(".gitignore", "hunky.log\n");
     repo.commit_all("add ignore rule");
 
-    let event = Event::new(EventKind::Modify(ModifyKind::Any))
-        .add_path(repo.path.join("hunky.log"));
+    let event =
+        Event::new(EventKind::Modify(ModifyKind::Any)).add_path(repo.path.join("hunky.log"));
 
     assert!(!should_process_event(&event, &repo.path));
 }
@@ -121,7 +124,10 @@ async fn watcher_emits_snapshot_for_tracked_file_changes() {
         repo.write_file("tracked.txt", &format!("line 1\nline {}\n", attempt + 2));
         if let Ok(Some(snapshot)) = tokio::time::timeout(WATCHER_RECV_TIMEOUT, rx.recv()).await {
             assert!(!snapshot.files.is_empty());
-            assert!(snapshot.files.iter().any(|file| file.path.ends_with("tracked.txt")));
+            assert!(snapshot
+                .files
+                .iter()
+                .any(|file| file.path.ends_with("tracked.txt")));
             return;
         }
         tokio::time::sleep(FS_STABILIZATION_DELAY).await;
