@@ -1,6 +1,9 @@
 # Rust
 /target
 
+# Benchmark artifacts
+target/criterion
+
 # Testing
 test-repo/
 
