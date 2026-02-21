@@ -2,6 +2,7 @@
 name = "hunky"
 version = "0.1.0"
 edition = "2021"
+autotests = false
 
 [dependencies]
 # TUI framework
