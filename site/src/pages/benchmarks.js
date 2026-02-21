@@ -10,9 +10,10 @@ function formatNs(ns) {
   return `${ns.toFixed(0)} ns`;
 }
 
-/** Tiny sparkline SVG rendered from an array of numbers. */
-function Sparkline({values, width = 220, height = 40}) {
-  if (!values || values.length < 2) return null;
+/** Tiny sparkline SVG rendered from an array of trend entries. */
+function Sparkline({entries, width = 220, height = 40}) {
+  if (!entries || entries.length < 2) return null;
+  const values = entries.map((e) => e.value);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
@@ -49,10 +50,10 @@ function Sparkline({values, width = 220, height = 40}) {
 }
 
 /** Change badge showing the delta between the two most recent entries. */
-function ChangeBadge({values}) {
-  if (!values || values.length < 2) return null;
-  const prev = values[values.length - 2];
-  const curr = values[values.length - 1];
+function ChangeBadge({entries}) {
+  if (!entries || entries.length < 2) return null;
+  const prev = entries[entries.length - 2].value;
+  const curr = entries[entries.length - 1].value;
   const pct = ((curr - prev) / prev) * 100;
   const improved = pct < 0;
   const color = improved ? '#2e8555' : pct === 0 ? '#888' : '#d9534f';
@@ -88,13 +89,16 @@ export default function Benchmarks() {
   const latest = history?.[history.length - 1];
   const benchmarkNames = latest ? Object.keys(latest.benchmarks).sort() : [];
 
-  // Build per-benchmark trend arrays
+  // Build per-benchmark trend arrays with their corresponding history indices
   const trends = {};
   if (history) {
     for (const name of benchmarkNames) {
-      trends[name] = history
-        .map((h) => h.benchmarks[name]?.mean)
-        .filter((v) => v != null);
+      const entries = [];
+      for (let i = 0; i < history.length; i++) {
+        const v = history[i].benchmarks[name]?.mean;
+        if (v != null) entries.push({value: v, index: i});
+      }
+      trends[name] = entries;
     }
   }
 
@@ -162,10 +166,10 @@ export default function Benchmarks() {
                           {formatNs(b.std_dev)}
                         </td>
                         <td style={{textAlign: 'center'}}>
-                          <ChangeBadge values={trends[name]} />
+                          <ChangeBadge entries={trends[name]} />
                         </td>
                         <td>
-                          <Sparkline values={trends[name]} />
+                          <Sparkline entries={trends[name]} />
                         </td>
                       </tr>
                     );
@@ -192,7 +196,7 @@ export default function Benchmarks() {
                       key={name}
                       name={name}
                       history={history}
-                      values={trends[name]}
+                      entries={trends[name]}
                     />
                   ))}
                 </div>
@@ -206,8 +210,12 @@ export default function Benchmarks() {
 }
 
 /** Card showing a larger trend chart for a single benchmark. */
-function TrendCard({name, history, values}) {
-  if (!values || values.length < 2) return null;
+function TrendCard({name, history, entries}) {
+  if (!entries || entries.length < 2) return null;
+
+  const values = entries.map((e) => e.value);
+  const firstCommit = history[entries[0].index]?.commit;
+  const lastCommit = history[entries[entries.length - 1].index]?.commit;
 
   const width = 320;
   const height = 120;
@@ -298,8 +306,8 @@ function TrendCard({name, history, values}) {
           color: 'var(--ifm-color-emphasis-600)',
           marginTop: 4,
         }}>
-        <span>{history[history.length - values.length]?.commit}</span>
-        <span>{history[history.length - 1]?.commit}</span>
+        <span>{firstCommit}</span>
+        <span>{lastCommit}</span>
       </div>
     </div>
   );
