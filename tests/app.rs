@@ -203,7 +203,7 @@ async fn toggle_line_selection_mode_restores_saved_line() {
 }
 
 #[tokio::test]
-async fn advance_hunk_stops_at_last_hunk() {
+async fn advance_hunk_wraps_at_last_hunk_in_view_mode() {
     let repo = TestRepo::new();
     let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
         .await
@@ -212,9 +212,61 @@ async fn advance_hunk_stops_at_last_hunk() {
     app.current_snapshot_index = 0;
     app.current_file_index = 1;
     app.current_hunk_index = 0;
+    app.mode = Mode::View;
+
+    app.advance_hunk();
+    assert_eq!(app.current_file_index, 0);
+    assert_eq!(app.current_hunk_index, 0);
+}
+
+#[tokio::test]
+async fn advance_hunk_stops_at_last_hunk_in_buffered_mode() {
+    let repo = TestRepo::new();
+    let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+        .await
+        .expect("failed to create app");
+    app.snapshots = vec![sample_snapshot()];
+    app.current_snapshot_index = 0;
+    app.current_file_index = 1;
+    app.current_hunk_index = 0;
+    app.mode = Mode::Streaming(StreamingType::Buffered);
 
     app.advance_hunk();
     assert_eq!(app.current_file_index, 1);
+    assert_eq!(app.current_hunk_index, 0);
+}
+
+#[tokio::test]
+async fn previous_hunk_wraps_at_first_hunk_in_view_mode() {
+    let repo = TestRepo::new();
+    let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+        .await
+        .expect("failed to create app");
+    app.snapshots = vec![sample_snapshot()];
+    app.current_snapshot_index = 0;
+    app.current_file_index = 0;
+    app.current_hunk_index = 0;
+    app.mode = Mode::View;
+
+    app.previous_hunk();
+    assert_eq!(app.current_file_index, 1);
+    assert_eq!(app.current_hunk_index, 0);
+}
+
+#[tokio::test]
+async fn previous_hunk_stops_at_first_hunk_in_buffered_mode() {
+    let repo = TestRepo::new();
+    let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+        .await
+        .expect("failed to create app");
+    app.snapshots = vec![sample_snapshot()];
+    app.current_snapshot_index = 0;
+    app.current_file_index = 0;
+    app.current_hunk_index = 0;
+    app.mode = Mode::Streaming(StreamingType::Buffered);
+
+    app.previous_hunk();
+    assert_eq!(app.current_file_index, 0);
     assert_eq!(app.current_hunk_index, 0);
 }
 

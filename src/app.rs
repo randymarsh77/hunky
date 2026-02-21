@@ -497,11 +497,18 @@ impl App {
             self.current_file_index += 1;
             self.current_hunk_index = 0;
             
-            // If no more files, stay at the last hunk of the last file
+            // If no more files, behavior depends on mode
             if self.current_file_index >= snapshot.files.len() {
-                self.current_file_index = snapshot.files.len().saturating_sub(1);
-                if let Some(last_file) = snapshot.files.get(self.current_file_index) {
-                    self.current_hunk_index = last_file.hunks.len().saturating_sub(1);
+                if self.mode == Mode::View {
+                    // View mode: wrap to the first hunk of the first file
+                    self.current_file_index = 0;
+                    self.current_hunk_index = 0;
+                } else {
+                    // Streaming/Buffered: pager semantics, stay at last hunk
+                    self.current_file_index = snapshot.files.len().saturating_sub(1);
+                    if let Some(last_file) = snapshot.files.get(self.current_file_index) {
+                        self.current_hunk_index = last_file.hunks.len().saturating_sub(1);
+                    }
                 }
             }
         }
@@ -532,12 +539,16 @@ impl App {
         
         // If we're at the first hunk of the current file, go to previous file's last hunk
         if self.current_hunk_index == 0 {
-            self.previous_file();
-            // Set to the last hunk of the new file
-            let snapshot = &self.snapshots[self.current_snapshot_index];
-            if self.current_file_index < snapshot.files.len() {
-                let last_hunk_index = snapshot.files[self.current_file_index].hunks.len().saturating_sub(1);
-                self.current_hunk_index = last_hunk_index;
+            if self.mode != Mode::View && self.current_file_index == 0 {
+                // Streaming/Buffered: pager semantics, stay at first hunk
+            } else {
+                self.previous_file();
+                // Set to the last hunk of the new file
+                let snapshot = &self.snapshots[self.current_snapshot_index];
+                if self.current_file_index < snapshot.files.len() {
+                    let last_hunk_index = snapshot.files[self.current_file_index].hunks.len().saturating_sub(1);
+                    self.current_hunk_index = last_hunk_index;
+                }
             }
         } else {
             // Just go back one hunk in the current file
