@@ -857,8 +857,14 @@ fn get_commit_diff_returns_snapshot_for_commit() {
 
     // Check that the diff contains expected changes
     let hunk = &file.hunks[0];
-    let has_removal = hunk.lines.iter().any(|l| l.starts_with('-') && l.contains("line 2"));
-    let has_addition = hunk.lines.iter().any(|l| l.starts_with('+') && l.contains("line 2 updated"));
+    let has_removal = hunk
+        .lines
+        .iter()
+        .any(|l| l.starts_with('-') && l.contains("line 2"));
+    let has_addition = hunk
+        .lines
+        .iter()
+        .any(|l| l.starts_with('+') && l.contains("line 2 updated"));
     assert!(has_removal, "expected removal of 'line 2'");
     assert!(has_addition, "expected addition of 'line 2 updated'");
 }

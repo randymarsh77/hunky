@@ -763,7 +763,9 @@ impl<'a> UI<'a> {
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan))
-                .title("Select a commit to review (↑/↓ to navigate, Enter to select, Esc to cancel)"),
+                .title(
+                    "Select a commit to review (↑/↓ to navigate, Enter to select, Esc to cancel)",
+                ),
         );
 
         let mut state = ratatui::widgets::ListState::default();

@@ -479,15 +479,8 @@ impl GitRepo {
             let commit = repo.find_commit(oid)?;
             let sha = oid.to_string();
             let short_sha = sha[..7.min(sha.len())].to_string();
-            let summary = commit
-                .summary()
-                .unwrap_or("")
-                .to_string();
-            let author = commit
-                .author()
-                .name()
-                .unwrap_or("unknown")
-                .to_string();
+            let summary = commit.summary().unwrap_or("").to_string();
+            let author = commit.author().name().unwrap_or("unknown").to_string();
             commits.push(CommitInfo {
                 sha,
                 short_sha,
@@ -502,8 +495,7 @@ impl GitRepo {
     /// Get a DiffSnapshot for a specific commit (diff between commit's parent and the commit).
     pub fn get_commit_diff(&self, commit_sha: &str) -> Result<DiffSnapshot> {
         let repo = Repository::open(&self.repo_path)?;
-        let oid = git2::Oid::from_str(commit_sha)
-            .context("Invalid commit SHA")?;
+        let oid = git2::Oid::from_str(commit_sha).context("Invalid commit SHA")?;
         let commit = repo.find_commit(oid)?;
         let commit_tree = commit.tree()?;
 
@@ -550,7 +542,9 @@ impl GitRepo {
 
         // Get hunks for each file from the commit diff
         for file in &mut files {
-            if let Ok(hunks) = self.get_commit_file_hunks(&repo, &file.path, parent_tree.as_ref(), &commit_tree) {
+            if let Ok(hunks) =
+                self.get_commit_file_hunks(&repo, &file.path, parent_tree.as_ref(), &commit_tree)
+            {
                 file.hunks = hunks;
             }
         }
@@ -573,11 +567,7 @@ impl GitRepo {
         diff_opts.pathspec(path);
         diff_opts.context_lines(3);
 
-        let diff = repo.diff_tree_to_tree(
-            parent_tree,
-            Some(commit_tree),
-            Some(&mut diff_opts),
-        )?;
+        let diff = repo.diff_tree_to_tree(parent_tree, Some(commit_tree), Some(&mut diff_opts))?;
 
         let path_buf = path.to_path_buf();
 

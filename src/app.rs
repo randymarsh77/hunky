@@ -636,7 +636,8 @@ impl App {
 
         // If we're at the first hunk of the current file, go to previous file's last hunk
         if self.current_hunk_index == 0 {
-            if self.mode != Mode::View && self.mode != Mode::Review && self.current_file_index == 0 {
+            if self.mode != Mode::View && self.mode != Mode::Review && self.current_file_index == 0
+            {
                 // Streaming/Buffered: pager semantics, stay at first hunk
             } else {
                 self.previous_file();
@@ -1258,7 +1259,10 @@ impl App {
             return;
         }
         let sha = self.review_commits[self.review_commit_cursor].sha.clone();
-        debug_log(format!("Loading commit diff for {}", &sha[..7.min(sha.len())]));
+        debug_log(format!(
+            "Loading commit diff for {}",
+            &sha[..7.min(sha.len())]
+        ));
 
         match self.git_repo.get_commit_diff(&sha) {
             Ok(snapshot) => {
