@@ -792,3 +792,91 @@ fn regression_flake_lock_stage_hunk_from_partial_index_state() {
         .stage_hunk(hunk, Path::new("flake.lock"))
         .expect("stage_hunk should succeed for this flake.lock state");
 }
+
+#[test]
+fn get_recent_commits_returns_commit_list() {
+    let repo = TestRepo::new();
+    repo.write_file("a.txt", "one\n");
+    repo.commit_all("first commit");
+    repo.write_file("a.txt", "two\n");
+    repo.commit_all("second commit");
+
+    let git_repo = GitRepo::new(&repo.path).expect("failed to open test repo");
+    let commits = git_repo
+        .get_recent_commits(10)
+        .expect("failed to get recent commits");
+
+    assert_eq!(commits.len(), 2);
+    assert_eq!(commits[0].summary, "second commit");
+    assert_eq!(commits[1].summary, "first commit");
+    assert_eq!(commits[0].short_sha.len(), 7);
+    assert_eq!(commits[0].author, "Test User");
+}
+
+#[test]
+fn get_recent_commits_respects_count_limit() {
+    let repo = TestRepo::new();
+    for i in 0..5 {
+        repo.write_file("a.txt", &format!("content {}\n", i));
+        repo.commit_all(&format!("commit {}", i));
+    }
+
+    let git_repo = GitRepo::new(&repo.path).expect("failed to open test repo");
+    let commits = git_repo
+        .get_recent_commits(3)
+        .expect("failed to get recent commits");
+
+    assert_eq!(commits.len(), 3);
+}
+
+#[test]
+fn get_commit_diff_returns_snapshot_for_commit() {
+    let repo = TestRepo::new();
+    repo.write_file("example.txt", "line 1\nline 2\n");
+    repo.commit_all("initial");
+    repo.write_file("example.txt", "line 1\nline 2 updated\n");
+    repo.commit_all("modify line 2");
+
+    let git_repo = GitRepo::new(&repo.path).expect("failed to open test repo");
+    let commits = git_repo
+        .get_recent_commits(2)
+        .expect("failed to get commits");
+    let latest_sha = &commits[0].sha;
+
+    let snapshot = git_repo
+        .get_commit_diff(latest_sha)
+        .expect("failed to get commit diff");
+
+    assert!(!snapshot.files.is_empty());
+    let file = snapshot
+        .files
+        .iter()
+        .find(|f| f.path == PathBuf::from("example.txt"))
+        .expect("expected example.txt in commit diff");
+    assert!(!file.hunks.is_empty());
+
+    // Check that the diff contains expected changes
+    let hunk = &file.hunks[0];
+    let has_removal = hunk.lines.iter().any(|l| l.starts_with('-') && l.contains("line 2"));
+    let has_addition = hunk.lines.iter().any(|l| l.starts_with('+') && l.contains("line 2 updated"));
+    assert!(has_removal, "expected removal of 'line 2'");
+    assert!(has_addition, "expected addition of 'line 2 updated'");
+}
+
+#[test]
+fn get_commit_diff_handles_initial_commit() {
+    let repo = TestRepo::new();
+    repo.write_file("new.txt", "brand new\n");
+    repo.commit_all("initial commit");
+
+    let git_repo = GitRepo::new(&repo.path).expect("failed to open test repo");
+    let commits = git_repo
+        .get_recent_commits(1)
+        .expect("failed to get commits");
+
+    let snapshot = git_repo
+        .get_commit_diff(&commits[0].sha)
+        .expect("failed to get initial commit diff");
+
+    assert!(!snapshot.files.is_empty());
+}
