@@ -96,6 +96,9 @@ pub struct App {
     review_commit_cursor: usize,
     review_selecting_commit: bool,
     review_snapshot: Option<DiffSnapshot>,
+    // Status message for user feedback (e.g., "Copied to clipboard")
+    status_message: Option<String>,
+    status_message_time: Option<Instant>,
 }
 
 impl App {
@@ -162,6 +165,8 @@ impl App {
             review_commit_cursor: 0,
             review_selecting_commit: false,
             review_snapshot: None,
+            status_message: None,
+            status_message_time: None,
         };
 
         Ok(app)
@@ -281,6 +286,14 @@ impl App {
                 }
             }
 
+            // Auto-dismiss status message after 3 seconds
+            if let Some(time) = self.status_message_time {
+                if time.elapsed() > Duration::from_secs(3) {
+                    self.status_message = None;
+                    self.status_message_time = None;
+                }
+            }
+
             // Draw UI
             if self.needs_full_redraw {
                 terminal.clear()?;
@@ -349,6 +362,10 @@ impl App {
                         KeyCode::Char('q') | KeyCode::Char('Q') => break,
                         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                             break
+                        }
+                        KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            // Copy current hunk or selected line to clipboard
+                            self.copy_current_to_clipboard();
                         }
                         KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::SHIFT) => {
                             // Shift+Space goes to previous hunk (works in View, Streaming Buffered, and Review)
@@ -1079,6 +1096,61 @@ impl App {
         }
     }
 
+    /// Copy text to the system clipboard using the OSC 52 terminal escape sequence.
+    /// This is supported by most modern terminal emulators.
+    fn write_to_clipboard(text: &str) {
+        use base64::Engine;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(text);
+        // OSC 52: \x1b]52;c;<base64>\x07
+        let osc52 = format!("\x1b]52;c;{}\x07", encoded);
+        // Write directly to stdout, bypassing ratatui's buffer
+        let _ = io::Write::write_all(&mut io::stdout(), osc52.as_bytes());
+        let _ = io::Write::flush(&mut io::stdout());
+    }
+
+    /// Copy the current hunk or selected line to the clipboard
+    fn copy_current_to_clipboard(&mut self) {
+        if let Some(snapshot) = self.current_snapshot() {
+            if let Some(file) = snapshot.files.get(self.current_file_index) {
+                if let Some(hunk) = file.hunks.get(self.current_hunk_index) {
+                    let text = if self.line_selection_mode {
+                        // Copy just the selected line (without the diff prefix)
+                        if let Some(line) = hunk.lines.get(self.selected_line_index) {
+                            let content = if line.starts_with('+') || line.starts_with('-') {
+                                &line[1..]
+                            } else if line.starts_with(' ') {
+                                &line[1..]
+                            } else {
+                                line.as_str()
+                            };
+                            content.trim_end().to_string()
+                        } else {
+                            return;
+                        }
+                    } else {
+                        // Copy the entire hunk content
+                        hunk.lines
+                            .iter()
+                            .map(|l| l.trim_end())
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    };
+
+                    Self::write_to_clipboard(&text);
+
+                    let msg = if self.line_selection_mode {
+                        "Copied line to clipboard".to_string()
+                    } else {
+                        "Copied hunk to clipboard".to_string()
+                    };
+                    debug_log(msg.clone());
+                    self.status_message = Some(msg);
+                    self.status_message_time = Some(Instant::now());
+                }
+            }
+        }
+    }
+
     fn open_commit_mode(&mut self) -> Result<()> {
         // Temporarily suspend the TUI so git/editor can take over the terminal.
         disable_raw_mode()?;
@@ -1394,6 +1466,10 @@ impl App {
         self.review_commit_cursor
     }
 
+    pub fn status_message(&self) -> Option<&str> {
+        self.status_message.as_deref()
+    }
+
     /// Get the height (line count) of the current hunk content
     pub fn current_hunk_content_height(&self) -> usize {
         if let Some(snapshot) = self.current_snapshot() {
@@ -1429,7 +1505,7 @@ impl App {
 
     /// Get the height (line count) of the help sidebar content
     pub fn help_content_height(&self) -> usize {
-        32 // Number of help lines in draw_help_sidebar
+        33 // Number of help lines in draw_help_sidebar
     }
 
     /// Clamp scroll offset to valid range based on content and viewport height
@@ -1456,7 +1532,7 @@ impl App {
 
     /// Get the height (line count) of the extended help content
     pub fn extended_help_content_height(&self) -> usize {
-        108 // Exact number of lines in draw_extended_help
+        116 // Exact number of lines in draw_extended_help
     }
 
     /// Clamp extended help scroll offset to valid range based on content and viewport height
