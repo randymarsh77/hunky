@@ -45,6 +45,14 @@ fn ignores_non_create_modify_remove_events() {
 }
 
 #[test]
+fn ignores_events_for_paths_outside_repo() {
+    let repo_path = PathBuf::from("/tmp/repo");
+    let event = Event::new(EventKind::Modify(ModifyKind::Any))
+        .add_path(PathBuf::from("/tmp/other/file.txt"));
+    assert!(!should_process_event(&event, &repo_path));
+}
+
+#[test]
 fn ignores_gitignored_files() {
     let repo = TestRepo::new();
     repo.write_file(".gitignore", "hunky.log\n");
