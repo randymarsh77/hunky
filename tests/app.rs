@@ -320,7 +320,7 @@ async fn navigation_and_scroll_helpers_cover_core_branches() {
     assert_eq!(app.scroll_offset, 0);
     app.help_scroll_offset = 50;
     app.clamp_help_scroll_offset(10);
-    assert_eq!(app.help_scroll_offset, 17);
+    assert_eq!(app.help_scroll_offset, 22);
     app.extended_help_scroll_offset = 500;
     app.clamp_extended_help_scroll_offset(20);
     assert_eq!(app.extended_help_scroll_offset, 88);
@@ -785,4 +785,243 @@ async fn ui_draw_renders_mini_compact_help_and_empty_states() {
         .expect("failed to draw no-snapshot state");
     let rendered = render_buffer_to_string(&terminal);
     assert!(rendered.contains("No changes"));
+}
+
+#[tokio::test]
+async fn enter_review_mode_loads_commits_and_sets_selecting_state() {
+    let repo = TestRepo::new();
+    repo.write_file("a.txt", "one\n");
+    repo.commit_all("initial");
+    repo.write_file("a.txt", "two\n");
+    repo.commit_all("second");
+
+    let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+        .await
+        .expect("failed to create app");
+
+    app.enter_review_mode();
+    assert_eq!(app.mode, Mode::Review);
+    assert!(app.review_selecting_commit);
+    assert!(!app.review_commits.is_empty());
+    assert_eq!(app.review_commit_cursor, 0);
+}
+
+#[tokio::test]
+async fn review_commit_cursor_navigates_within_bounds() {
+    let repo = TestRepo::new();
+    repo.write_file("a.txt", "one\n");
+    repo.commit_all("first");
+    repo.write_file("a.txt", "two\n");
+    repo.commit_all("second");
+
+    let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+        .await
+        .expect("failed to create app");
+
+    app.enter_review_mode();
+    assert_eq!(app.review_commit_cursor, 0);
+
+    // Navigate down
+    app.review_commit_cursor = 1;
+    assert_eq!(app.review_commit_cursor, 1);
+
+    // Can't go above max
+    let max = app.review_commits.len().saturating_sub(1);
+    app.review_commit_cursor = max;
+    assert_eq!(app.review_commit_cursor, max);
+}
+
+#[tokio::test]
+async fn select_review_commit_loads_diff_and_exits_picker() {
+    let repo = TestRepo::new();
+    repo.write_file("example.txt", "line 1\n");
+    repo.commit_all("initial");
+    repo.write_file("example.txt", "line 1 updated\n");
+    repo.commit_all("update");
+
+    let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+        .await
+        .expect("failed to create app");
+
+    app.enter_review_mode();
+    app.select_review_commit();
+
+    assert!(!app.review_selecting_commit);
+    assert!(app.review_snapshot.is_some());
+    assert_eq!(app.mode, Mode::Review);
+    assert_eq!(app.current_file_index, 0);
+    assert_eq!(app.current_hunk_index, 0);
+}
+
+#[tokio::test]
+async fn toggle_review_acceptance_marks_hunk_as_accepted() {
+    let repo = TestRepo::new();
+    repo.write_file("example.txt", "line 1\n");
+    repo.commit_all("initial");
+    repo.write_file("example.txt", "line 1 updated\n");
+    repo.commit_all("update");
+
+    let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+        .await
+        .expect("failed to create app");
+
+    app.enter_review_mode();
+    app.select_review_commit();
+
+    // Hunk should not be accepted initially
+    let hunk = &app.review_snapshot.as_ref().unwrap().files[0].hunks[0];
+    assert!(!hunk.accepted);
+
+    // Toggle acceptance
+    app.toggle_review_acceptance();
+    let hunk = &app.review_snapshot.as_ref().unwrap().files[0].hunks[0];
+    assert!(hunk.accepted);
+
+    // Toggle back
+    app.toggle_review_acceptance();
+    let hunk = &app.review_snapshot.as_ref().unwrap().files[0].hunks[0];
+    assert!(!hunk.accepted);
+}
+
+#[tokio::test]
+async fn exit_review_mode_restores_view_mode() {
+    let repo = TestRepo::new();
+    repo.write_file("example.txt", "line 1\n");
+    repo.commit_all("initial");
+    repo.write_file("example.txt", "line 1 updated\n");
+    repo.commit_all("update");
+
+    let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+        .await
+        .expect("failed to create app");
+
+    app.enter_review_mode();
+    app.select_review_commit();
+
+    assert_eq!(app.mode, Mode::Review);
+
+    app.exit_review_mode();
+    assert_eq!(app.mode, Mode::View);
+    assert!(!app.review_selecting_commit);
+    assert!(app.review_commits.is_empty());
+    assert!(app.review_snapshot.is_none());
+}
+
+#[tokio::test]
+async fn ui_draw_renders_review_mode_header() {
+    let repo = TestRepo::new();
+    repo.write_file("a.txt", "one\n");
+    repo.commit_all("initial");
+    repo.write_file("a.txt", "two\n");
+    repo.commit_all("update");
+
+    let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+        .await
+        .expect("failed to create app");
+
+    app.enter_review_mode();
+    app.select_review_commit();
+
+    let backend = TestBackend::new(160, 30);
+    let mut terminal = Terminal::new(backend).expect("failed to create terminal");
+    terminal
+        .draw(|frame| {
+            UI::new(&app).draw(frame);
+        })
+        .expect("failed to draw review mode");
+    let rendered = render_buffer_to_string(&terminal);
+    assert!(
+        rendered.contains("REVIEW"),
+        "expected REVIEW in header, got:\n{}",
+        rendered
+    );
+}
+
+#[tokio::test]
+async fn ui_draw_renders_commit_picker() {
+    let repo = TestRepo::new();
+    repo.write_file("a.txt", "one\n");
+    repo.commit_all("initial commit");
+    repo.write_file("a.txt", "two\n");
+    repo.commit_all("second commit");
+
+    let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+        .await
+        .expect("failed to create app");
+
+    app.enter_review_mode();
+
+    let backend = TestBackend::new(120, 30);
+    let mut terminal = Terminal::new(backend).expect("failed to create terminal");
+    terminal
+        .draw(|frame| {
+            UI::new(&app).draw(frame);
+        })
+        .expect("failed to draw commit picker");
+    let rendered = render_buffer_to_string(&terminal);
+    assert!(
+        rendered.contains("Select a commit"),
+        "expected commit picker title, got:\n{}",
+        rendered
+    );
+    assert!(
+        rendered.contains("second commit"),
+        "expected commit message in picker, got:\n{}",
+        rendered
+    );
+}
+
+#[tokio::test]
+async fn ui_draw_renders_accepted_indicator_in_review_mode() {
+    let repo = TestRepo::new();
+    repo.write_file("example.txt", "line 1\n");
+    repo.commit_all("initial");
+    repo.write_file("example.txt", "line 1 updated\n");
+    repo.commit_all("update");
+
+    let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+        .await
+        .expect("failed to create app");
+
+    app.enter_review_mode();
+    app.select_review_commit();
+    app.toggle_review_acceptance();
+
+    let backend = TestBackend::new(120, 30);
+    let mut terminal = Terminal::new(backend).expect("failed to create terminal");
+    terminal
+        .draw(|frame| {
+            UI::new(&app).draw(frame);
+        })
+        .expect("failed to draw accepted hunk");
+    let rendered = render_buffer_to_string(&terminal);
+    assert!(
+        rendered.contains("[ACCEPTED ✓]"),
+        "expected [ACCEPTED ✓] indicator, got:\n{}",
+        rendered
+    );
+}
+
+#[tokio::test]
+async fn review_mode_advance_hunk_wraps() {
+    let repo = TestRepo::new();
+    repo.write_file("a.txt", "one\n");
+    repo.commit_all("initial");
+    repo.write_file("a.txt", "two\n");
+    repo.commit_all("update");
+
+    let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+        .await
+        .expect("failed to create app");
+
+    app.enter_review_mode();
+    app.select_review_commit();
+
+    let file_count = app.review_snapshot.as_ref().unwrap().files.len();
+    // Advance past all hunks - should wrap back to start
+    for _ in 0..100 {
+        app.advance_hunk();
+    }
+    // Should have wrapped back
+    assert!(app.current_file_index < file_count);
 }

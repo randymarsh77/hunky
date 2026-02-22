@@ -64,6 +64,7 @@ fn hunk_format_and_constructor_defaults() {
     assert!(!hunk.seen);
     assert!(!hunk.staged);
     assert!(hunk.staged_line_indices.is_empty());
+    assert!(!hunk.accepted);
 }
 
 #[test]
