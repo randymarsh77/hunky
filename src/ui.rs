@@ -67,6 +67,7 @@ impl<'a> UI<'a> {
             // Full layout
             let mode_text = match self.app.mode() {
                 Mode::View => "VIEW",
+                Mode::Review => "REVIEW",
                 Mode::Streaming(StreamingType::Buffered) => "STREAMING (Buffered)",
                 Mode::Streaming(StreamingType::Auto(StreamSpeed::Fast)) => {
                     "STREAMING (Auto - Fast)"
@@ -83,6 +84,7 @@ impl<'a> UI<'a> {
             // Medium layout
             let mode_text = match self.app.mode() {
                 Mode::View => "VIEW",
+                Mode::Review => "REVIEW",
                 Mode::Streaming(StreamingType::Buffered) => "STREAM (Buff)",
                 Mode::Streaming(StreamingType::Auto(StreamSpeed::Fast)) => "STREAM (Fast)",
                 Mode::Streaming(StreamingType::Auto(StreamSpeed::Medium)) => "STREAM (Med)",
@@ -93,6 +95,7 @@ impl<'a> UI<'a> {
             // Compact layout
             let mode_text = match self.app.mode() {
                 Mode::View => "VIEW",
+                Mode::Review => "REV",
                 Mode::Streaming(StreamingType::Buffered) => "STM:B",
                 Mode::Streaming(StreamingType::Auto(StreamSpeed::Fast)) => "STM:F",
                 Mode::Streaming(StreamingType::Auto(StreamSpeed::Medium)) => "STM:M",
@@ -103,6 +106,7 @@ impl<'a> UI<'a> {
             // Mini layout - minimal info
             let mode_text = match self.app.mode() {
                 Mode::View => "V",
+                Mode::Review => "R",
                 Mode::Streaming(StreamingType::Buffered) => "B",
                 Mode::Streaming(StreamingType::Auto(StreamSpeed::Fast)) => "F",
                 Mode::Streaming(StreamingType::Auto(StreamSpeed::Medium)) => "M",
@@ -144,6 +148,12 @@ impl<'a> UI<'a> {
     }
 
     fn draw_main_content(&self, frame: &mut Frame, area: Rect) -> (u16, u16, u16) {
+        // Check if commit picker overlay should be shown
+        if self.app.review_selecting_commit() {
+            self.draw_commit_picker(frame, area);
+            return (0, 0, 0);
+        }
+
         // Check if extended help view should be shown
         if self.app.show_extended_help() {
             let help_height = self.draw_extended_help(frame, area);
@@ -193,6 +203,8 @@ impl<'a> UI<'a> {
             }
         };
 
+        let is_review_mode = self.app.mode() == Mode::Review;
+
         let items: Vec<ListItem> = snapshot
             .files
             .iter()
@@ -214,34 +226,44 @@ impl<'a> UI<'a> {
                 };
 
                 let hunk_count = file.hunks.len();
-                let staged_count = file.hunks.iter().filter(|h| h.staged).count();
 
-                // Count partially staged hunks
-                let partial_count = file
-                    .hunks
-                    .iter()
-                    .filter(|h| {
-                        let total_change_lines = h
-                            .lines
-                            .iter()
-                            .filter(|line| {
-                                (line.starts_with('+') && !line.starts_with("+++"))
-                                    || (line.starts_with('-') && !line.starts_with("---"))
-                            })
-                            .count();
-                        let staged_lines = h.staged_line_indices.len();
-                        staged_lines > 0 && staged_lines < total_change_lines
-                    })
-                    .count();
-
-                let count_text = if staged_count > 0 || partial_count > 0 {
-                    if partial_count > 0 {
-                        format!(" ({}) [{}✓ {}⚠]", hunk_count, staged_count, partial_count)
+                let count_text = if is_review_mode {
+                    let accepted_count = file.hunks.iter().filter(|h| h.accepted).count();
+                    if accepted_count > 0 {
+                        format!(" ({}) [{}✓]", hunk_count, accepted_count)
                     } else {
-                        format!(" ({}) [{}✓]", hunk_count, staged_count)
+                        format!(" ({})", hunk_count)
                     }
                 } else {
-                    format!(" ({})", hunk_count)
+                    let staged_count = file.hunks.iter().filter(|h| h.staged).count();
+
+                    // Count partially staged hunks
+                    let partial_count = file
+                        .hunks
+                        .iter()
+                        .filter(|h| {
+                            let total_change_lines = h
+                                .lines
+                                .iter()
+                                .filter(|line| {
+                                    (line.starts_with('+') && !line.starts_with("+++"))
+                                        || (line.starts_with('-') && !line.starts_with("---"))
+                                })
+                                .count();
+                            let staged_lines = h.staged_line_indices.len();
+                            staged_lines > 0 && staged_lines < total_change_lines
+                        })
+                        .count();
+
+                    if staged_count > 0 || partial_count > 0 {
+                        if partial_count > 0 {
+                            format!(" ({}) [{}✓ {}⚠]", hunk_count, staged_count, partial_count)
+                        } else {
+                            format!(" ({}) [{}✓]", hunk_count, staged_count)
+                        }
+                    } else {
+                        format!(" ({})", hunk_count)
+                    }
                 };
 
                 let content = Line::from(vec![
@@ -339,7 +361,7 @@ impl<'a> UI<'a> {
         ]));
         lines.push(Line::from(""));
 
-        // Add hunk header with seen and staged indicators
+        // Add hunk header with seen, staged, and accepted indicators
         // Check if partially staged
         let total_change_lines = hunk
             .lines
@@ -351,58 +373,40 @@ impl<'a> UI<'a> {
             .count();
         let staged_lines_count = hunk.staged_line_indices.len();
         let is_partially_staged = staged_lines_count > 0 && staged_lines_count < total_change_lines;
+        let is_review_mode = self.app.mode() == Mode::Review;
 
-        let hunk_header = if is_partially_staged {
+        let base_header = format!(
+            "@@ -{},{} +{},{} @@",
+            hunk.old_start,
+            hunk.lines.len(),
+            hunk.new_start,
+            hunk.lines.len()
+        );
+
+        let hunk_header = if is_review_mode {
+            // In review mode, show accepted state
+            if hunk.accepted {
+                format!("{} [ACCEPTED ✓]", base_header)
+            } else {
+                base_header
+            }
+        } else if is_partially_staged {
             match hunk.seen {
-                true => format!(
-                    "@@ -{},{} +{},{} @@ [PARTIAL ⚠] [SEEN]",
-                    hunk.old_start,
-                    hunk.lines.len(),
-                    hunk.new_start,
-                    hunk.lines.len()
-                ),
-                false => format!(
-                    "@@ -{},{} +{},{} @@ [PARTIAL ⚠]",
-                    hunk.old_start,
-                    hunk.lines.len(),
-                    hunk.new_start,
-                    hunk.lines.len()
-                ),
+                true => format!("{} [PARTIAL ⚠] [SEEN]", base_header),
+                false => format!("{} [PARTIAL ⚠]", base_header),
             }
         } else {
             match (hunk.staged, hunk.seen) {
-                (true, true) => format!(
-                    "@@ -{},{} +{},{} @@ [STAGED ✓] [SEEN]",
-                    hunk.old_start,
-                    hunk.lines.len(),
-                    hunk.new_start,
-                    hunk.lines.len()
-                ),
-                (true, false) => format!(
-                    "@@ -{},{} +{},{} @@ [STAGED ✓]",
-                    hunk.old_start,
-                    hunk.lines.len(),
-                    hunk.new_start,
-                    hunk.lines.len()
-                ),
-                (false, true) => format!(
-                    "@@ -{},{} +{},{} @@ [SEEN]",
-                    hunk.old_start,
-                    hunk.lines.len(),
-                    hunk.new_start,
-                    hunk.lines.len()
-                ),
-                (false, false) => format!(
-                    "@@ -{},{} +{},{} @@",
-                    hunk.old_start,
-                    hunk.lines.len(),
-                    hunk.new_start,
-                    hunk.lines.len()
-                ),
+                (true, true) => format!("{} [STAGED ✓] [SEEN]", base_header),
+                (true, false) => format!("{} [STAGED ✓]", base_header),
+                (false, true) => format!("{} [SEEN]", base_header),
+                (false, false) => base_header,
             }
         };
 
-        let header_style = if is_partially_staged {
+        let header_style = if is_review_mode && hunk.accepted {
+            Style::default().fg(Color::Green)
+        } else if is_partially_staged {
             Style::default().fg(Color::Yellow)
         } else if hunk.staged {
             Style::default().fg(Color::Green)
@@ -677,6 +681,16 @@ impl<'a> UI<'a> {
             Line::from("S: Stage/Unstage"),
             Line::from(""),
             Line::from(Span::styled(
+                "Review",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from("R: Review Commit"),
+            Line::from("S: Accept (in review)"),
+            Line::from("ESC: Exit Review"),
+            Line::from(""),
+            Line::from(Span::styled(
                 "Other",
                 Style::default()
                     .fg(Color::Yellow)
@@ -706,6 +720,55 @@ impl<'a> UI<'a> {
 
         frame.render_widget(help, area);
         viewport_height
+    }
+
+    fn draw_commit_picker(&self, frame: &mut Frame, area: Rect) {
+        let commits = self.app.review_commits();
+        let cursor = self.app.review_commit_cursor();
+
+        let items: Vec<ListItem> = commits
+            .iter()
+            .enumerate()
+            .map(|(idx, commit)| {
+                let is_selected = idx == cursor;
+                let style = if is_selected {
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+
+                let content = Line::from(vec![
+                    Span::styled(
+                        format!("{} ", commit.short_sha),
+                        Style::default().fg(if is_selected {
+                            Color::Cyan
+                        } else {
+                            Color::DarkGray
+                        }),
+                    ),
+                    Span::styled(&commit.summary, style),
+                    Span::styled(
+                        format!(" ({})", commit.author),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ]);
+
+                ListItem::new(content)
+            })
+            .collect();
+
+        let list = List::new(items).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title("Select a commit to review (↑/↓ to navigate, Enter to select, Esc to cancel)"),
+        );
+
+        let mut state = ratatui::widgets::ListState::default();
+        state.select(Some(cursor));
+        frame.render_stateful_widget(list, area, &mut state);
     }
 
     fn draw_extended_help(&self, frame: &mut Frame, area: Rect) -> u16 {

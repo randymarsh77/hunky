@@ -320,7 +320,7 @@ async fn navigation_and_scroll_helpers_cover_core_branches() {
     assert_eq!(app.scroll_offset, 0);
     app.help_scroll_offset = 50;
     app.clamp_help_scroll_offset(10);
-    assert_eq!(app.help_scroll_offset, 17);
+    assert_eq!(app.help_scroll_offset, 22);
     app.extended_help_scroll_offset = 500;
     app.clamp_extended_help_scroll_offset(20);
     assert_eq!(app.extended_help_scroll_offset, 88);

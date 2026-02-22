@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use git2::{Delta, DiffOptions, Repository};
 use std::path::{Path, PathBuf};
 
-use crate::diff::{DiffSnapshot, FileChange, Hunk};
+use crate::diff::{CommitInfo, DiffSnapshot, FileChange, Hunk};
 
 #[derive(Clone)]
 pub struct GitRepo {
@@ -464,6 +464,182 @@ impl GitRepo {
             .context("Failed to run `git commit`")?;
 
         Ok(status)
+    }
+
+    /// Get a list of recent commits (up to `count`) for the commit review picker.
+    pub fn get_recent_commits(&self, count: usize) -> Result<Vec<CommitInfo>> {
+        let repo = Repository::open(&self.repo_path)?;
+        let mut revwalk = repo.revwalk()?;
+        revwalk.push_head().context("No commits found")?;
+        revwalk.set_sorting(git2::Sort::TIME)?;
+
+        let mut commits = Vec::new();
+        for oid in revwalk.take(count) {
+            let oid = oid?;
+            let commit = repo.find_commit(oid)?;
+            let sha = oid.to_string();
+            let short_sha = sha[..7.min(sha.len())].to_string();
+            let summary = commit
+                .summary()
+                .unwrap_or("")
+                .to_string();
+            let author = commit
+                .author()
+                .name()
+                .unwrap_or("unknown")
+                .to_string();
+            commits.push(CommitInfo {
+                sha,
+                short_sha,
+                summary,
+                author,
+            });
+        }
+
+        Ok(commits)
+    }
+
+    /// Get a DiffSnapshot for a specific commit (diff between commit's parent and the commit).
+    pub fn get_commit_diff(&self, commit_sha: &str) -> Result<DiffSnapshot> {
+        let repo = Repository::open(&self.repo_path)?;
+        let oid = git2::Oid::from_str(commit_sha)
+            .context("Invalid commit SHA")?;
+        let commit = repo.find_commit(oid)?;
+        let commit_tree = commit.tree()?;
+
+        let parent_tree = if commit.parent_count() > 0 {
+            Some(commit.parent(0)?.tree()?)
+        } else {
+            None
+        };
+
+        let mut diff_opts = DiffOptions::new();
+        diff_opts.context_lines(3);
+
+        let diff = repo.diff_tree_to_tree(
+            parent_tree.as_ref(),
+            Some(&commit_tree),
+            Some(&mut diff_opts),
+        )?;
+
+        let mut files = Vec::new();
+
+        // Collect file paths first
+        diff.foreach(
+            &mut |delta, _progress| {
+                let file_path = match delta.status() {
+                    Delta::Added | Delta::Modified | Delta::Deleted => {
+                        delta.new_file().path().or_else(|| delta.old_file().path())
+                    }
+                    _ => None,
+                };
+
+                if let Some(path) = file_path {
+                    files.push(FileChange {
+                        path: path.to_path_buf(),
+                        status: format!("{:?}", delta.status()),
+                        hunks: Vec::new(),
+                    });
+                }
+                true
+            },
+            None,
+            None,
+            None,
+        )?;
+
+        // Get hunks for each file from the commit diff
+        for file in &mut files {
+            if let Ok(hunks) = self.get_commit_file_hunks(&repo, &file.path, parent_tree.as_ref(), &commit_tree) {
+                file.hunks = hunks;
+            }
+        }
+
+        Ok(DiffSnapshot {
+            timestamp: std::time::SystemTime::now(),
+            files,
+        })
+    }
+
+    /// Get hunks for a file from a commit diff (parent tree vs commit tree).
+    fn get_commit_file_hunks(
+        &self,
+        repo: &Repository,
+        path: &Path,
+        parent_tree: Option<&git2::Tree>,
+        commit_tree: &git2::Tree,
+    ) -> Result<Vec<Hunk>> {
+        let mut diff_opts = DiffOptions::new();
+        diff_opts.pathspec(path);
+        diff_opts.context_lines(3);
+
+        let diff = repo.diff_tree_to_tree(
+            parent_tree,
+            Some(commit_tree),
+            Some(&mut diff_opts),
+        )?;
+
+        let path_buf = path.to_path_buf();
+
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let hunks = Rc::new(RefCell::new(Vec::new()));
+        let current_hunk_lines = Rc::new(RefCell::new(Vec::new()));
+        let current_old_start = Rc::new(RefCell::new(0usize));
+        let current_new_start = Rc::new(RefCell::new(0usize));
+        let in_hunk = Rc::new(RefCell::new(false));
+
+        let hunks_clone = hunks.clone();
+        let lines_clone = current_hunk_lines.clone();
+        let old_clone = current_old_start.clone();
+        let new_clone = current_new_start.clone();
+        let in_hunk_clone = in_hunk.clone();
+        let path_clone = path_buf.clone();
+
+        let lines_clone2 = current_hunk_lines.clone();
+        let in_hunk_clone2 = in_hunk.clone();
+
+        diff.foreach(
+            &mut |_, _| true,
+            None,
+            Some(&mut move |_, hunk| {
+                if *in_hunk_clone.borrow() && !lines_clone.borrow().is_empty() {
+                    hunks_clone.borrow_mut().push(Hunk::new(
+                        *old_clone.borrow(),
+                        *new_clone.borrow(),
+                        lines_clone.borrow().clone(),
+                        &path_clone,
+                    ));
+                    lines_clone.borrow_mut().clear();
+                }
+                *old_clone.borrow_mut() = hunk.old_start() as usize;
+                *new_clone.borrow_mut() = hunk.new_start() as usize;
+                *in_hunk_clone.borrow_mut() = true;
+                true
+            }),
+            Some(&mut move |_, _, line| {
+                if *in_hunk_clone2.borrow() {
+                    let content = String::from_utf8_lossy(line.content()).to_string();
+                    lines_clone2
+                        .borrow_mut()
+                        .push(format!("{}{}", line.origin(), content));
+                }
+                true
+            }),
+        )?;
+
+        if *in_hunk.borrow() && !current_hunk_lines.borrow().is_empty() {
+            hunks.borrow_mut().push(Hunk::new(
+                *current_old_start.borrow(),
+                *current_new_start.borrow(),
+                current_hunk_lines.borrow().clone(),
+                &path_buf,
+            ));
+        }
+
+        let result = hunks.borrow().clone();
+        Ok(result)
     }
 
     pub fn get_diff_snapshot(&self) -> Result<DiffSnapshot> {

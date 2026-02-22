@@ -13,7 +13,7 @@ use std::io::{self};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
-use crate::diff::{DiffSnapshot, FileChange};
+use crate::diff::{CommitInfo, DiffSnapshot, FileChange};
 use crate::git::GitRepo;
 use crate::ui::UI;
 use crate::watcher::FileWatcher;
@@ -40,6 +40,7 @@ pub enum StreamingType {
 pub enum Mode {
     View,                     // View all current changes, full navigation
     Streaming(StreamingType), // Stream new hunks as they arrive
+    Review,                   // Review hunks in a specific commit
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -90,6 +91,11 @@ pub struct App {
     last_help_viewport_height: u16,
     needs_full_redraw: bool,
     _watcher: FileWatcher,
+    // Review mode state
+    review_commits: Vec<CommitInfo>,
+    review_commit_cursor: usize,
+    review_selecting_commit: bool,
+    review_snapshot: Option<DiffSnapshot>,
 }
 
 impl App {
@@ -152,6 +158,10 @@ impl App {
             last_help_viewport_height: 20, // Reasonable default
             needs_full_redraw: true,
             _watcher: watcher,
+            review_commits: Vec::new(),
+            review_commit_cursor: 0,
+            review_selecting_commit: false,
+            review_snapshot: None,
         };
 
         Ok(app)
@@ -230,6 +240,10 @@ impl App {
                             debug_log("Updated current snapshot in View mode".to_string());
                         }
                     }
+                    Mode::Review => {
+                        // In Review mode, ignore live snapshot updates (reviewing a commit)
+                        debug_log("Ignoring snapshot update in Review mode".to_string());
+                    }
                     Mode::Streaming(_) => {
                         // In Streaming mode, only add snapshots that arrived after we entered streaming
                         // These are "new" changes to stream
@@ -298,16 +312,49 @@ impl App {
             // Handle input (non-blocking)
             if event::poll(Duration::from_millis(50))? {
                 if let Event::Key(key) = event::read()? {
+                    // If the commit picker overlay is active, handle its keys first
+                    if self.review_selecting_commit {
+                        match key.code {
+                            KeyCode::Char('q') | KeyCode::Char('Q') => break,
+                            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                break
+                            }
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                if !self.review_commits.is_empty()
+                                    && self.review_commit_cursor + 1 < self.review_commits.len()
+                                {
+                                    self.review_commit_cursor += 1;
+                                }
+                            }
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                self.review_commit_cursor =
+                                    self.review_commit_cursor.saturating_sub(1);
+                            }
+                            KeyCode::Enter => {
+                                self.select_review_commit();
+                            }
+                            KeyCode::Esc => {
+                                // Cancel commit selection, go back to View mode
+                                self.review_selecting_commit = false;
+                                self.review_commits.clear();
+                                self.mode = Mode::View;
+                                debug_log("Cancelled review commit selection".to_string());
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
                     match key.code {
                         KeyCode::Char('q') | KeyCode::Char('Q') => break,
                         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                             break
                         }
                         KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                            // Shift+Space goes to previous hunk (works in View and Streaming Buffered)
+                            // Shift+Space goes to previous hunk (works in View, Streaming Buffered, and Review)
                             debug_log(format!("Shift+Space pressed, mode: {:?}", self.mode));
                             match self.mode {
-                                Mode::View => {
+                                Mode::View | Mode::Review => {
                                     self.previous_hunk();
                                 }
                                 Mode::Streaming(StreamingType::Buffered) => {
@@ -320,12 +367,23 @@ impl App {
                                 }
                             }
                         }
-                        KeyCode::Char('c') => {
-                            if let Err(e) = self.open_commit_mode() {
-                                debug_log(format!("Failed to open commit mode: {}", e));
+                        KeyCode::Char('r') | KeyCode::Char('R') => {
+                            if self.mode != Mode::Review {
+                                self.enter_review_mode();
                             }
                         }
-                        KeyCode::Char('m') => self.cycle_mode(),
+                        KeyCode::Char('c') => {
+                            if self.mode != Mode::Review {
+                                if let Err(e) = self.open_commit_mode() {
+                                    debug_log(format!("Failed to open commit mode: {}", e));
+                                }
+                            }
+                        }
+                        KeyCode::Char('m') => {
+                            if self.mode != Mode::Review {
+                                self.cycle_mode();
+                            }
+                        }
                         KeyCode::Char(' ') => {
                             // Advance to next hunk
                             self.advance_hunk();
@@ -334,7 +392,7 @@ impl App {
                             // 'b' for back - alternative to Shift+Space
                             debug_log("B key pressed (back)".to_string());
                             match self.mode {
-                                Mode::View => {
+                                Mode::View | Mode::Review => {
                                     self.previous_hunk();
                                 }
                                 Mode::Streaming(StreamingType::Buffered) => {
@@ -446,8 +504,13 @@ impl App {
                             self.show_filenames_only = !self.show_filenames_only;
                         }
                         KeyCode::Char('s') | KeyCode::Char('S') => {
-                            // Stage/unstage current selection (smart toggle)
-                            self.stage_current_selection();
+                            if self.mode == Mode::Review {
+                                // In review mode, toggle acceptance of the current hunk (in-memory)
+                                self.toggle_review_acceptance();
+                            } else {
+                                // Stage/unstage current selection (smart toggle)
+                                self.stage_current_selection();
+                            }
                         }
                         KeyCode::Char('w') => {
                             // Toggle line wrapping
@@ -475,14 +538,19 @@ impl App {
                             self.extended_help_scroll_offset = 0;
                         }
                         KeyCode::Esc => {
-                            // Reset to defaults
-                            self.show_extended_help = false;
-                            self.extended_help_scroll_offset = 0;
-                            self.mode = Mode::View;
-                            self.line_selection_mode = false;
-                            self.focus = FocusPane::HunkView;
-                            self.show_help = false;
-                            self.help_scroll_offset = 0;
+                            if self.mode == Mode::Review {
+                                // Exit review mode, go back to View
+                                self.exit_review_mode();
+                            } else {
+                                // Reset to defaults
+                                self.show_extended_help = false;
+                                self.extended_help_scroll_offset = 0;
+                                self.mode = Mode::View;
+                                self.line_selection_mode = false;
+                                self.focus = FocusPane::HunkView;
+                                self.show_help = false;
+                                self.help_scroll_offset = 0;
+                            }
                         }
                         _ => {}
                     }
@@ -494,25 +562,22 @@ impl App {
     }
 
     fn advance_hunk(&mut self) {
-        if self.snapshots.is_empty() {
-            return;
-        }
-
-        let snapshot = &self.snapshots[self.current_snapshot_index];
-        if snapshot.files.is_empty() {
-            return;
-        }
+        // Get needed info from snapshot without holding borrow on self
+        let (files_len, file_hunks_len) = {
+            let snapshot = match self.active_snapshot() {
+                Some(s) if !s.files.is_empty() => s,
+                _ => return,
+            };
+            let fl = snapshot.files.len();
+            if self.current_file_index >= fl {
+                return;
+            }
+            (fl, snapshot.files[self.current_file_index].hunks.len())
+        };
 
         // Clear line memory for current hunk before moving
         let old_hunk_key = (self.current_file_index, self.current_hunk_index);
         self.hunk_line_memory.remove(&old_hunk_key);
-
-        // Bounds check
-        if self.current_file_index >= snapshot.files.len() {
-            return;
-        }
-
-        let file_hunks_len = snapshot.files[self.current_file_index].hunks.len();
 
         // Advance to next hunk
         self.current_hunk_index += 1;
@@ -524,16 +589,18 @@ impl App {
             self.current_hunk_index = 0;
 
             // If no more files, behavior depends on mode
-            if self.current_file_index >= snapshot.files.len() {
-                if self.mode == Mode::View {
-                    // View mode: wrap to the first hunk of the first file
+            if self.current_file_index >= files_len {
+                if self.mode == Mode::View || self.mode == Mode::Review {
+                    // View/Review mode: wrap to the first hunk of the first file
                     self.current_file_index = 0;
                     self.current_hunk_index = 0;
                 } else {
                     // Streaming/Buffered: pager semantics, stay at last hunk
-                    self.current_file_index = snapshot.files.len().saturating_sub(1);
-                    if let Some(last_file) = snapshot.files.get(self.current_file_index) {
-                        self.current_hunk_index = last_file.hunks.len().saturating_sub(1);
+                    self.current_file_index = files_len.saturating_sub(1);
+                    if let Some(snapshot) = self.active_snapshot() {
+                        if let Some(last_file) = snapshot.files.get(self.current_file_index) {
+                            self.current_hunk_index = last_file.hunks.len().saturating_sub(1);
+                        }
                     }
                 }
             }
@@ -542,13 +609,14 @@ impl App {
 
     fn previous_hunk(&mut self) {
         debug_log("previous_hunk called".to_string());
-        if self.snapshots.is_empty() {
-            debug_log("No snapshots, returning".to_string());
-            return;
-        }
+        let files_len = match self.active_snapshot() {
+            Some(s) => s.files.len(),
+            None => {
+                debug_log("No snapshot, returning".to_string());
+                return;
+            }
+        };
 
-        // Check if we have files before proceeding
-        let files_len = self.snapshots[self.current_snapshot_index].files.len();
         if files_len == 0 {
             debug_log("No files in snapshot, returning".to_string());
             return;
@@ -568,18 +636,19 @@ impl App {
 
         // If we're at the first hunk of the current file, go to previous file's last hunk
         if self.current_hunk_index == 0 {
-            if self.mode != Mode::View && self.current_file_index == 0 {
+            if self.mode != Mode::View && self.mode != Mode::Review && self.current_file_index == 0 {
                 // Streaming/Buffered: pager semantics, stay at first hunk
             } else {
                 self.previous_file();
                 // Set to the last hunk of the new file
-                let snapshot = &self.snapshots[self.current_snapshot_index];
-                if self.current_file_index < snapshot.files.len() {
-                    let last_hunk_index = snapshot.files[self.current_file_index]
-                        .hunks
-                        .len()
-                        .saturating_sub(1);
-                    self.current_hunk_index = last_hunk_index;
+                if let Some(snapshot) = self.active_snapshot() {
+                    if self.current_file_index < snapshot.files.len() {
+                        let last_hunk_index = snapshot.files[self.current_file_index]
+                            .hunks
+                            .len()
+                            .saturating_sub(1);
+                        self.current_hunk_index = last_hunk_index;
+                    }
                 }
             }
         } else {
@@ -594,20 +663,15 @@ impl App {
     }
 
     fn next_file(&mut self) {
-        if self.snapshots.is_empty() {
-            return;
-        }
-
-        let snapshot = &self.snapshots[self.current_snapshot_index];
-        if snapshot.files.is_empty() {
-            return;
-        }
+        let files_len = match self.active_snapshot() {
+            Some(s) if !s.files.is_empty() => s.files.len(),
+            _ => return,
+        };
 
         // Clear line memory for old file
         let old_file_index = self.current_file_index;
 
         // Calculate next file index before clearing memory
-        let files_len = snapshot.files.len();
         self.current_file_index = (self.current_file_index + 1) % files_len;
         self.current_hunk_index = 0;
 
@@ -616,20 +680,15 @@ impl App {
     }
 
     fn previous_file(&mut self) {
-        if self.snapshots.is_empty() {
-            return;
-        }
-
-        let snapshot = &self.snapshots[self.current_snapshot_index];
-        if snapshot.files.is_empty() {
-            return;
-        }
+        let files_len = match self.active_snapshot() {
+            Some(s) if !s.files.is_empty() => s.files.len(),
+            _ => return,
+        };
 
         // Clear line memory for old file
         let old_file_index = self.current_file_index;
 
         // Calculate previous file index before clearing memory
-        let files_len = snapshot.files.len();
         if self.current_file_index == 0 {
             self.current_file_index = files_len - 1;
         } else {
@@ -773,6 +832,10 @@ impl App {
                 self.current_hunk_index = 0;
                 debug_log("Exiting Streaming mode, back to View".to_string());
                 Mode::View
+            }
+            Mode::Review => {
+                // cycle_mode should not be called in Review mode, but handle gracefully
+                Mode::Review
             }
         };
         self.last_auto_advance = Instant::now();
@@ -1162,8 +1225,97 @@ impl App {
         self.selected_line_index = 0;
     }
 
+    /// Get the active snapshot for navigation — works in both normal and review modes.
+    fn active_snapshot(&self) -> Option<&DiffSnapshot> {
+        if self.mode == Mode::Review {
+            self.review_snapshot.as_ref()
+        } else {
+            self.snapshots.get(self.current_snapshot_index)
+        }
+    }
+
+    fn enter_review_mode(&mut self) {
+        match self.git_repo.get_recent_commits(20) {
+            Ok(commits) => {
+                if commits.is_empty() {
+                    debug_log("No commits found for review".to_string());
+                    return;
+                }
+                self.review_commits = commits;
+                self.review_commit_cursor = 0;
+                self.review_selecting_commit = true;
+                self.mode = Mode::Review;
+                debug_log("Entered review mode, showing commit picker".to_string());
+            }
+            Err(e) => {
+                debug_log(format!("Failed to get commits for review: {}", e));
+            }
+        }
+    }
+
+    fn select_review_commit(&mut self) {
+        if self.review_commit_cursor >= self.review_commits.len() {
+            return;
+        }
+        let sha = self.review_commits[self.review_commit_cursor].sha.clone();
+        debug_log(format!("Loading commit diff for {}", &sha[..7.min(sha.len())]));
+
+        match self.git_repo.get_commit_diff(&sha) {
+            Ok(snapshot) => {
+                self.review_snapshot = Some(snapshot);
+                self.review_selecting_commit = false;
+                self.current_file_index = 0;
+                self.current_hunk_index = 0;
+                self.scroll_offset = 0;
+                self.line_selection_mode = false;
+                self.focus = FocusPane::HunkView;
+                debug_log("Loaded commit diff for review".to_string());
+            }
+            Err(e) => {
+                debug_log(format!("Failed to load commit diff: {}", e));
+                self.review_selecting_commit = false;
+                self.review_commits.clear();
+                self.mode = Mode::View;
+            }
+        }
+    }
+
+    fn exit_review_mode(&mut self) {
+        self.mode = Mode::View;
+        self.review_selecting_commit = false;
+        self.review_commits.clear();
+        self.review_snapshot = None;
+        self.current_file_index = 0;
+        self.current_hunk_index = 0;
+        self.scroll_offset = 0;
+        self.line_selection_mode = false;
+        self.focus = FocusPane::HunkView;
+        self.show_help = false;
+        self.help_scroll_offset = 0;
+        debug_log("Exited review mode".to_string());
+    }
+
+    fn toggle_review_acceptance(&mut self) {
+        if let Some(ref mut snapshot) = self.review_snapshot {
+            if let Some(file) = snapshot.files.get_mut(self.current_file_index) {
+                if let Some(hunk) = file.hunks.get_mut(self.current_hunk_index) {
+                    hunk.accepted = !hunk.accepted;
+                    debug_log(format!(
+                        "Hunk accepted={} in {}",
+                        hunk.accepted,
+                        file.path.display()
+                    ));
+                }
+            }
+        }
+    }
+
     pub fn current_snapshot(&self) -> Option<&DiffSnapshot> {
-        self.snapshots.get(self.current_snapshot_index)
+        if self.mode == Mode::Review {
+            self.review_snapshot.as_ref()
+        } else {
+            self.snapshots.get(self.current_snapshot_index)
+        }
     }
 
     pub fn current_file(&self) -> Option<&FileChange> {
@@ -1226,6 +1378,18 @@ impl App {
         self.syntax_highlighting
     }
 
+    pub fn review_selecting_commit(&self) -> bool {
+        self.review_selecting_commit
+    }
+
+    pub fn review_commits(&self) -> &[CommitInfo] {
+        &self.review_commits
+    }
+
+    pub fn review_commit_cursor(&self) -> usize {
+        self.review_commit_cursor
+    }
+
     /// Get the height (line count) of the current hunk content
     pub fn current_hunk_content_height(&self) -> usize {
         if let Some(snapshot) = self.current_snapshot() {
@@ -1261,7 +1425,7 @@ impl App {
 
     /// Get the height (line count) of the help sidebar content
     pub fn help_content_height(&self) -> usize {
-        27 // Number of help lines in draw_help_sidebar
+        32 // Number of help lines in draw_help_sidebar
     }
 
     /// Clamp scroll offset to valid range based on content and viewport height

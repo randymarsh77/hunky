@@ -10,6 +10,15 @@ pub struct DiffSnapshot {
     pub files: Vec<FileChange>,
 }
 
+/// Metadata about a git commit for the review mode commit picker
+#[derive(Debug, Clone)]
+pub struct CommitInfo {
+    pub sha: String,
+    pub short_sha: String,
+    pub summary: String,
+    pub author: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct FileChange {
     pub path: PathBuf,
@@ -26,6 +35,8 @@ pub struct Hunk {
     pub staged: bool,
     /// Track which individual lines are staged (by index in lines vec)
     pub staged_line_indices: HashSet<usize>,
+    /// In-memory tracking for review mode: whether this hunk has been accepted
+    pub accepted: bool,
     #[allow(dead_code)]
     pub id: HunkId,
 }
@@ -63,6 +74,7 @@ impl Hunk {
             seen: false,
             staged: false,
             staged_line_indices: HashSet::new(),
+            accepted: false,
             id,
         }
     }
