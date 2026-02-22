@@ -1116,13 +1116,12 @@ impl App {
                     let text = if self.line_selection_mode {
                         // Copy just the selected line (without the diff prefix)
                         if let Some(line) = hunk.lines.get(self.selected_line_index) {
-                            let content = if line.starts_with('+') || line.starts_with('-') {
-                                &line[1..]
-                            } else if line.starts_with(' ') {
-                                &line[1..]
-                            } else {
-                                line.as_str()
-                            };
+                            let content =
+                                if line.starts_with('+') || line.starts_with('-') || line.starts_with(' ') {
+                                    &line[1..]
+                                } else {
+                                    line.as_str()
+                                };
                             content.trim_end().to_string()
                         } else {
                             return;
@@ -1139,12 +1138,12 @@ impl App {
                     Self::write_to_clipboard(&text);
 
                     let msg = if self.line_selection_mode {
-                        "Copied line to clipboard".to_string()
+                        "Copied line to clipboard"
                     } else {
-                        "Copied hunk to clipboard".to_string()
+                        "Copied hunk to clipboard"
                     };
-                    debug_log(msg.clone());
-                    self.status_message = Some(msg);
+                    debug_log(msg.to_string());
+                    self.status_message = Some(msg.to_string());
                     self.status_message_time = Some(Instant::now());
                 }
             }
