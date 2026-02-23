@@ -3,6 +3,10 @@
 
   nixConfig = {
     extra-substituters = [ "https://hunky.sh/cache" ];
+    # To enable signature verification, generate a signing key pair with
+    # nix-store --generate-binary-cache-key hunky-cache-1 private.pem public.pem
+    # then add the private key as the NIX_SIGNING_KEY CI secret and uncomment:
+    # extra-trusted-public-keys = [ "hunky-cache-1:<base64-public-key>" ];
   };
 
   inputs = {

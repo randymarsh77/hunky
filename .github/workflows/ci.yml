@@ -216,7 +216,10 @@ jobs:
         run: |
           $OPENCACHE/bin/opencache &
           echo "SERVER_PID=$!" >> "$GITHUB_ENV"
-          sleep 2
+          for i in $(seq 1 10); do
+            curl -sf http://localhost:8080/nix-cache-info && break
+            sleep 1
+          done
 
       - name: Push to cache
         run: |
@@ -225,7 +228,7 @@ jobs:
           done < /tmp/store-paths.txt
 
       - name: Stop OpenCache
-        run: kill "$SERVER_PID"
+        run: kill "$SERVER_PID" || true
 
       - name: Generate static cache site
         env:
