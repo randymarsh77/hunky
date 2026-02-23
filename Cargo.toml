@@ -4,35 +4,36 @@ version = "0.1.0"
 edition = "2021"
 autotests = false
 
+[features]
+default = ["native"]
+native = [
+    "dep:crossterm",
+    "dep:git2",
+    "dep:notify",
+    "dep:tokio",
+    "dep:tokio-stream",
+    "dep:syntect",
+    "dep:clap",
+    "dep:similar",
+]
+
 [dependencies]
-# TUI framework
+# TUI framework (always needed)
 ratatui = "0.29"
-crossterm = "0.28"
 
-# Git operations
-git2 = "0.19"
-
-# File system watching
-notify = "6.1"
-
-# Async runtime
-tokio = { version = "1.42", features = ["full"] }
-
-# Error handling
+# Error handling (always needed)
 anyhow = "1.0"
 thiserror = "2.0"
 
-# Parsing and diffing
-similar = "2.6"
-
-# Syntax highlighting
-syntect = "5.2"
-
-# CLI argument parsing
-clap = { version = "4.5", features = ["derive"] }
-
-# Channels for async communication
-tokio-stream = "0.1"
+# --- native-only deps (gated behind the "native" feature) ---
+crossterm = { version = "0.28", optional = true }
+git2 = { version = "0.19", optional = true }
+notify = { version = "6.1", optional = true }
+tokio = { version = "1.42", features = ["full"], optional = true }
+tokio-stream = { version = "0.1", optional = true }
+syntect = { version = "5.2", optional = true }
+clap = { version = "4.5", features = ["derive"], optional = true }
+similar = { version = "2.6", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.8.2", features = ["html_reports"] }
