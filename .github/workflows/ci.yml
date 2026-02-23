@@ -139,8 +139,7 @@ jobs:
       - name: Build release binary
         if: runner.os != 'Windows'
         run: |
-          RELEASE_PATH="$(nix build .#default --accept-flake-config --print-out-paths --no-link)"
-          echo "BINARY_PATH=$RELEASE_PATH/bin/${{ matrix.binary }}" >> "$GITHUB_ENV"
+          echo "BINARY_PATH=$(nix build .#default --accept-flake-config --print-out-paths --no-link)/bin/${{ matrix.binary }}" >> "$GITHUB_ENV"
 
       - name: Build release binary (Windows)
         if: runner.os == 'Windows'
@@ -202,14 +201,14 @@ jobs:
       - name: Download release artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: hunky-*
+          pattern: hunky-*.*
           merge-multiple: true
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.check-release.outputs.version }}
-          files: hunky-*
+          files: hunky-*.*
 
   deploy-cache:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'

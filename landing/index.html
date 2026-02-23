@@ -623,13 +623,15 @@
 						curl -LO
 						https://github.com/randymarsh77/hunky/releases/latest/download/hunky-aarch64-unknown-linux-gnu.tar.gz<br />
 						tar xzf hunky-aarch64-unknown-linux-gnu.tar.gz<br />
+						<span class="comment"># Linux binaries run on Windows only inside WSL.</span><br />
 						<br />
 						<span class="comment"># Windows (x86_64, non-WSL)</span><br />
-						curl -LO
-						https://github.com/randymarsh77/hunky/releases/latest/download/hunky-x86_64-pc-windows-msvc.zip<br />
-						<span class="comment"># Linux binaries above run on Windows only inside WSL.</span><br />
-						<br />
-						<span class="comment"># Move to your PATH</span><br />
+						curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-x86_64-pc-windows-msvc.zip<br />
+						powershell -c "Expand-Archive hunky-x86_64-pc-windows-msvc.zip -DestinationPath ."<br />
+						<span class="comment"># Windows: add hunky.exe to your PATH</span><br />
+						powershell -c "New-Item -ItemType Directory -Force -Path $env:USERPROFILE/bin | Out-Null"<br />
+						powershell -c "Move-Item -Path ./hunky.exe -Destination $env:USERPROFILE/bin/hunky.exe -Force"<br />
+						<span class="comment"># Linux/macOS/WSL only: move to your PATH</span><br />
 						sudo mv hunky /usr/local/bin/
 					</div>
 					<p class="install-note">
