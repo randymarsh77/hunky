@@ -628,6 +628,9 @@
 						<span class="comment"># Windows (x86_64, non-WSL)</span><br />
 						curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-x86_64-pc-windows-msvc.zip<br />
 						powershell -c "Expand-Archive hunky-x86_64-pc-windows-msvc.zip -DestinationPath ."<br />
+						<span class="comment"># Windows (ARM64, non-WSL)</span><br />
+						curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-aarch64-pc-windows-msvc.zip<br />
+						powershell -c "Expand-Archive hunky-aarch64-pc-windows-msvc.zip -DestinationPath ."<br />
 						<span class="comment"># Windows: add hunky.exe to your PATH</span><br />
 						powershell -c "New-Item -ItemType Directory -Force -Path $env:USERPROFILE/bin | Out-Null"<br />
 						powershell -c "Move-Item -Path ./hunky.exe -Destination $env:USERPROFILE/bin/hunky.exe -Force"<br />

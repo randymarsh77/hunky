@@ -127,6 +127,10 @@ jobs:
             target: x86_64-pc-windows-msvc
             archive: hunky-x86_64-pc-windows-msvc.zip
             binary: hunky.exe
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            archive: hunky-aarch64-pc-windows-msvc.zip
+            binary: hunky.exe
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout

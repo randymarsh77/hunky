@@ -50,7 +50,7 @@ Hunky helps you observe file changes in a git repository as they happen, making 
 
 - Linux release binaries (`*-unknown-linux-gnu`) are for Linux hosts.
 - On Windows, those Linux binaries run only inside WSL (with a Linux userland), not in native Windows terminals.
-- Native Windows releases are published as `hunky-x86_64-pc-windows-msvc.zip`.
+- Native Windows releases are published as `hunky-x86_64-pc-windows-msvc.zip` and `hunky-aarch64-pc-windows-msvc.zip`.
 
 ### With Nix
 
