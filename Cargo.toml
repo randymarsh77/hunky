@@ -15,11 +15,12 @@ native = [
     "dep:syntect",
     "dep:clap",
     "dep:similar",
+    "ratatui/crossterm",
 ]
 
 [dependencies]
-# TUI framework (always needed)
-ratatui = "0.29"
+# TUI framework (always needed; crossterm backend enabled via the native feature)
+ratatui = { version = "0.29", default-features = false }
 
 # Error handling (always needed)
 anyhow = "1.0"

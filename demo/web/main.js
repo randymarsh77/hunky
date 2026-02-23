@@ -5,7 +5,7 @@
  * and runs the hunky demo application inside it.
  */
 
-import init, { App } from './pkg/hunky_demo.js';
+import init, { DemoApp } from './pkg/hunky_demo.js';
 
 const COLS = 100;
 const ROWS = 30;
@@ -44,7 +44,7 @@ async function run() {
   term.open(wrapper);
   fitAddon.fit();
 
-  const app = new App(term.cols, term.rows);
+  const app = new DemoApp(term.cols, term.rows);
 
   term.onKey(({ domEvent }) => {
     if (!app.should_quit()) {
