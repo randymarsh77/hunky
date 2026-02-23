@@ -21,3 +21,8 @@ site/node_modules/
 site/build/
 site/.docusaurus/
 site/.cache-loader/
+
+# Demo WASM build artifacts
+demo/target/
+demo/web/pkg/
+site/static/demo-app/

@@ -59,6 +59,11 @@ const config = {
             label: 'Docs',
           },
           {
+            to: '/demo',
+            label: 'Demo',
+            position: 'left',
+          },
+          {
             to: '/coverage',
             label: 'Coverage',
             position: 'left',

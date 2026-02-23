@@ -26,6 +26,11 @@ function HomepageHeader() {
           </Link>
           <Link
             className="button button--secondary button--lg"
+            to="/demo">
+            Try the Demo
+          </Link>
+          <Link
+            className="button button--secondary button--lg"
             to="/coverage">
             Coverage Report
           </Link>
