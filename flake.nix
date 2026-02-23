@@ -2,7 +2,7 @@
   description = "Hunky - A TUI for observing git changes in real-time";
 
   nixConfig = {
-    extra-substituters = [ "https://hunky.sh/cache" ];
+    extra-substituters = [ "https://randymarsh77.github.io/hunky/cache" ];
     # To enable signature verification, generate a signing key pair with
     # nix-store --generate-binary-cache-key hunky-cache-1 private.pem public.pem
     # then add the private key as the NIX_SIGNING_KEY CI secret and uncomment:

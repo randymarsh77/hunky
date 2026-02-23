@@ -194,11 +194,6 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
       - name: Build flake
         run: nix build .#default --print-out-paths | tee /tmp/store-paths.txt
 
@@ -233,20 +228,21 @@ jobs:
       - name: Generate static cache site
         env:
           LOCAL_STORAGE_PATH: /tmp/opencache-data
-          OUTPUT_DIR: ./landing/cache
+          OUTPUT_DIR: ./nix-cache-static
         run: $OPENCACHE/bin/opencache-generate-static
 
-      - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
+      - name: Upload cache artifact
+        uses: actions/upload-artifact@v4
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: pages deploy landing --project-name=hunky
+          name: nix-cache-static
+          path: ./nix-cache-static
 
   deploy-site:
     if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)
-    needs: [coverage, benchmark]
+      !cancelled() &&
+      ((github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false))
+    needs: [coverage, benchmark, deploy-cache]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -289,6 +285,13 @@ jobs:
       - name: Install site dependencies
         run: npm ci
         working-directory: site
+
+      - name: Download nix cache artifact
+        if: needs.deploy-cache.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: nix-cache-static
+          path: site/static/cache
 
       - name: Build Docusaurus site
         run: npm run build
