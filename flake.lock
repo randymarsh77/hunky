@@ -34,10 +34,31 @@
         "type": "github"
       }
     },
+    "opencache": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1771860002,
+        "narHash": "sha256-YAWTCqecGvwrRoo0q0lJUsk15FC0QrF/tI+PiomvKfw=",
+        "owner": "randymarsh77",
+        "repo": "OpenCache",
+        "rev": "e6888b130b03614bc962475c8662369f905bd2a0",
+        "type": "github"
+      },
+      "original": {
+        "owner": "randymarsh77",
+        "repo": "OpenCache",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
         "nixpkgs": "nixpkgs",
+        "opencache": "opencache",
         "rust-overlay": "rust-overlay"
       }
     },
