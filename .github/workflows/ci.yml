@@ -177,11 +177,72 @@ jobs:
           tag_name: v${{ needs.check-release.outputs.version }}
           files: hunky-*.tar.gz
 
+  deploy-cache:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [build-test-run]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GITHUB_OWNER: ${{ github.repository_owner }}
+      GITHUB_REPO: ${{ github.event.repository.name }}
+      GITHUB_RELEASE_TAG: nix-cache
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Build flake
+        run: nix build .#default --print-out-paths | tee /tmp/store-paths.txt
+
+      - name: Setup OpenCache
+        run: |
+          OPENCACHE=$(nix build .#opencache --print-out-paths --no-link)
+          echo "OPENCACHE=$OPENCACHE" >> "$GITHUB_ENV"
+
+      - name: Start OpenCache
+        env:
+          STORAGE_BACKEND: github-releases
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LOCAL_STORAGE_PATH: /tmp/opencache-data
+          PORT: 8080
+        run: |
+          $OPENCACHE/bin/opencache &
+          echo "SERVER_PID=$!" >> "$GITHUB_ENV"
+          for i in $(seq 1 10); do
+            curl -sf http://localhost:8080/nix-cache-info && break
+            sleep 1
+          done
+
+      - name: Push to cache
+        run: |
+          while IFS= read -r p; do
+            nix copy --to "http://localhost:8080?compression=none" "$p"
+          done < /tmp/store-paths.txt
+
+      - name: Stop OpenCache
+        run: kill "$SERVER_PID" || true
+
+      - name: Generate static cache site
+        env:
+          LOCAL_STORAGE_PATH: /tmp/opencache-data
+          OUTPUT_DIR: ./nix-cache-static
+        run: $OPENCACHE/bin/opencache-generate-static
+
+      - name: Upload cache artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nix-cache-static
+          path: ./nix-cache-static
+
   deploy-site:
     if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)
-    needs: [coverage, benchmark]
+      !cancelled() &&
+      ((github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false))
+    needs: [coverage, benchmark, deploy-cache]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -224,6 +285,13 @@ jobs:
       - name: Install site dependencies
         run: npm ci
         working-directory: site
+
+      - name: Download nix cache artifact
+        if: needs.deploy-cache.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: nix-cache-static
+          path: site/static/cache
 
       - name: Build Docusaurus site
         run: npm run build

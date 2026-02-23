@@ -1,6 +1,14 @@
 {
   description = "Hunky - A TUI for observing git changes in real-time";
 
+  nixConfig = {
+    extra-substituters = [ "https://randymarsh77.github.io/hunky/cache" ];
+    # To enable signature verification, generate a signing key pair with
+    # nix-store --generate-binary-cache-key hunky-cache-1 private.pem public.pem
+    # then add the private key as the NIX_SIGNING_KEY CI secret and uncomment:
+    # extra-trusted-public-keys = [ "hunky-cache-1:<base64-public-key>" ];
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     rust-overlay = {
@@ -8,6 +16,10 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     flake-utils.url = "github:numtide/flake-utils";
+    opencache = {
+      url = "github:randymarsh77/OpenCache";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -16,6 +28,7 @@
       nixpkgs,
       rust-overlay,
       flake-utils,
+      opencache,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
@@ -44,6 +57,7 @@
         packages = {
           default = hunkyPackage;
           hunky = hunkyPackage;
+          opencache = opencache.packages.${system}.default;
         };
 
         apps.default = {
