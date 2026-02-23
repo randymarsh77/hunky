@@ -3,7 +3,6 @@ mod diff;
 #[cfg(feature = "native")]
 mod git;
 mod logger;
-#[cfg(feature = "native")]
 mod syntax;
 mod ui;
 #[cfg(feature = "native")]

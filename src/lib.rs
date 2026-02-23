@@ -3,7 +3,6 @@ pub mod diff;
 #[cfg(feature = "native")]
 pub mod git;
 pub mod logger;
-#[cfg(feature = "native")]
 pub mod syntax;
 pub mod ui;
 #[cfg(feature = "native")]

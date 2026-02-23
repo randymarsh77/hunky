@@ -7,21 +7,7 @@ use ratatui::{
 };
 
 use crate::app::{App, FocusPane, Mode, StreamSpeed, StreamingType};
-#[cfg(feature = "native")]
 use crate::syntax::SyntaxHighlighter;
-
-/// Stub highlighter used when the `native` feature is disabled.
-/// Its `highlight_line` method matches the signature of
-/// [`crate::syntax::FileHighlighter`] so the same rendering code compiles.
-#[cfg(not(feature = "native"))]
-struct NoHighlighter;
-
-#[cfg(not(feature = "native"))]
-impl NoHighlighter {
-    fn highlight_line(&mut self, text: &str) -> Vec<(Color, String)> {
-        vec![(Color::White, text.to_string())]
-    }
-}
 
 /// Fade a color by reducing its brightness (for context lines)
 fn fade_color(color: Color) -> Color {
@@ -41,7 +27,6 @@ fn fade_color(color: Color) -> Color {
 
 pub struct UI<'a> {
     app: &'a App,
-    #[cfg(feature = "native")]
     highlighter: SyntaxHighlighter,
 }
 
@@ -49,7 +34,6 @@ impl<'a> UI<'a> {
     pub fn new(app: &'a App) -> Self {
         Self {
             app,
-            #[cfg(feature = "native")]
             highlighter: SyntaxHighlighter::new(),
         }
     }
@@ -454,18 +438,11 @@ impl<'a> UI<'a> {
         }
 
         // Create syntax highlighter for this file if enabled
-        #[cfg(feature = "native")]
         let mut file_highlighter = if self.app.syntax_highlighting() {
             Some(self.highlighter.create_highlighter(&file.path))
         } else {
             None
         };
-        // Fallback: syntax highlighting is a no-op without the native feature.
-        // Use a concrete type so the `if let Some(ref mut hl)` pattern below
-        // still compiles – it will simply always be `None`.
-        #[cfg(not(feature = "native"))]
-        #[allow(unused_mut)]
-        let mut file_highlighter: Option<NoHighlighter> = None;
 
         // Show up to 5 lines of context before
         let context_before_start = if context_before.len() > 5 {
