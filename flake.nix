@@ -1,6 +1,10 @@
 {
   description = "Hunky - A TUI for observing git changes in real-time";
 
+  nixConfig = {
+    extra-substituters = [ "https://hunky.sh/cache" ];
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     rust-overlay = {
@@ -8,6 +12,10 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     flake-utils.url = "github:numtide/flake-utils";
+    opencache = {
+      url = "github:randymarsh77/OpenCache";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -16,6 +24,7 @@
       nixpkgs,
       rust-overlay,
       flake-utils,
+      opencache,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
@@ -44,6 +53,7 @@
         packages = {
           default = hunkyPackage;
           hunky = hunkyPackage;
+          opencache = opencache.packages.${system}.default;
         };
 
         apps.default = {

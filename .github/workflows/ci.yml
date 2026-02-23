@@ -177,6 +177,68 @@ jobs:
           tag_name: v${{ needs.check-release.outputs.version }}
           files: hunky-*.tar.gz
 
+  deploy-cache:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [build-test-run]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GITHUB_OWNER: ${{ github.repository_owner }}
+      GITHUB_REPO: ${{ github.event.repository.name }}
+      GITHUB_RELEASE_TAG: nix-cache
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build flake
+        run: nix build .#default --print-out-paths | tee /tmp/store-paths.txt
+
+      - name: Setup OpenCache
+        run: |
+          OPENCACHE=$(nix build .#opencache --print-out-paths --no-link)
+          echo "OPENCACHE=$OPENCACHE" >> "$GITHUB_ENV"
+
+      - name: Start OpenCache
+        env:
+          STORAGE_BACKEND: github-releases
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LOCAL_STORAGE_PATH: /tmp/opencache-data
+          PORT: 8080
+        run: |
+          $OPENCACHE/bin/opencache &
+          echo "SERVER_PID=$!" >> "$GITHUB_ENV"
+          sleep 2
+
+      - name: Push to cache
+        run: |
+          while IFS= read -r p; do
+            nix copy --to "http://localhost:8080?compression=none" "$p"
+          done < /tmp/store-paths.txt
+
+      - name: Stop OpenCache
+        run: kill "$SERVER_PID"
+
+      - name: Generate static cache site
+        env:
+          LOCAL_STORAGE_PATH: /tmp/opencache-data
+          OUTPUT_DIR: ./landing/cache
+        run: $OPENCACHE/bin/opencache-generate-static
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: pages deploy landing --project-name=hunky
+
   deploy-site:
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
