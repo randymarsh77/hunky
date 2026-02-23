@@ -133,7 +133,9 @@ jobs:
           echo "RELEASE_PATH=$RELEASE_PATH" >> "$GITHUB_ENV"
 
       - name: Package release artifact
-        run: tar -czf "${{ matrix.archive }}" -C "$RELEASE_PATH/bin" hunky
+        run: |
+          test -x "$RELEASE_PATH/bin/hunky"
+          tar -czf "${{ matrix.archive }}" -C "$RELEASE_PATH/bin" hunky
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
