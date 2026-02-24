@@ -343,6 +343,59 @@
 				line-height: 1.6;
 			}
 
+			/* ── Binary sub-tabs ── */
+			.binary-subtabs {
+				display: flex;
+				gap: 1.5rem;
+				margin-bottom: 1.25rem;
+				flex-wrap: wrap;
+				align-items: center;
+			}
+			.binary-subtab-group {
+				display: flex;
+				align-items: center;
+				gap: 0.5rem;
+			}
+			.binary-subtab-label {
+				font-size: 0.78rem;
+				color: var(--text-muted);
+				text-transform: uppercase;
+				letter-spacing: 0.05em;
+				font-weight: 600;
+			}
+			.binary-subtab-options {
+				display: flex;
+				gap: 0.2rem;
+				background: var(--bg-code);
+				border: 1px solid var(--border);
+				border-radius: 8px;
+				padding: 0.15rem;
+			}
+			.binary-subtab {
+				padding: 0.35rem 0.75rem;
+				border-radius: 6px;
+				font-size: 0.8rem;
+				font-weight: 500;
+				cursor: pointer;
+				border: none;
+				color: var(--text-muted);
+				background: transparent;
+				transition: all 0.2s;
+			}
+			.binary-subtab:hover {
+				color: var(--text);
+			}
+			.binary-subtab.active {
+				background: var(--accent);
+				color: #fff;
+			}
+			.binary-content {
+				display: none;
+			}
+			.binary-content.active {
+				display: block;
+			}
+
 			/* ── Use cases ── */
 			.usecases {
 				display: grid;
@@ -600,43 +653,77 @@
 				</div>
 
 				<div class="install-panel" id="panel-binary" role="tabpanel" aria-labelledby="tab-binary">
-					<div class="install-code">
-						<span class="comment"># Download the latest release for your platform</span><br />
-						<span class="comment"># from the GitHub Releases page</span><br />
-						<br />
-						<span class="comment"># macOS (Apple Silicon)</span><br />
-						curl -LO
-						https://github.com/randymarsh77/hunky/releases/latest/download/hunky-aarch64-apple-darwin.tar.gz<br />
-						tar xzf hunky-aarch64-apple-darwin.tar.gz<br />
-						<br />
-						<span class="comment"># macOS (Intel)</span><br />
-						curl -LO
-						https://github.com/randymarsh77/hunky/releases/latest/download/hunky-x86_64-apple-darwin.tar.gz<br />
-						tar xzf hunky-x86_64-apple-darwin.tar.gz<br />
-						<br />
-						<span class="comment"># Linux (x86_64)</span><br />
-						curl -LO
-						https://github.com/randymarsh77/hunky/releases/latest/download/hunky-x86_64-unknown-linux-gnu.tar.gz<br />
-						tar xzf hunky-x86_64-unknown-linux-gnu.tar.gz<br />
-						<br />
-						<span class="comment"># Linux (ARM64)</span><br />
-						curl -LO
-						https://github.com/randymarsh77/hunky/releases/latest/download/hunky-aarch64-unknown-linux-gnu.tar.gz<br />
-						tar xzf hunky-aarch64-unknown-linux-gnu.tar.gz<br />
-						<span class="comment"># Linux binaries run on Windows only inside WSL.</span><br />
-						<br />
-						<span class="comment"># Windows (x86_64, non-WSL)</span><br />
-						curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-x86_64-pc-windows-msvc.zip<br />
-						powershell -c "Expand-Archive hunky-x86_64-pc-windows-msvc.zip -DestinationPath ."<br />
-						<span class="comment"># Windows (ARM64, non-WSL)</span><br />
-						curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-aarch64-pc-windows-msvc.zip<br />
-						powershell -c "Expand-Archive hunky-aarch64-pc-windows-msvc.zip -DestinationPath ."<br />
-						<span class="comment"># Windows: add hunky.exe to your PATH</span><br />
-						powershell -c "New-Item -ItemType Directory -Force -Path $env:USERPROFILE/bin | Out-Null"<br />
-						powershell -c "Move-Item -Path ./hunky.exe -Destination $env:USERPROFILE/bin/hunky.exe -Force"<br />
-						<span class="comment"># Linux/macOS/WSL only: move to your PATH</span><br />
-						sudo mv hunky /usr/local/bin/
+					<div class="binary-subtabs">
+						<div class="binary-subtab-group">
+							<span class="binary-subtab-label">OS</span>
+							<div class="binary-subtab-options" role="tablist" aria-label="Operating system">
+								<button class="binary-subtab active" role="tab" data-os="macos" aria-selected="true">macOS</button>
+								<button class="binary-subtab" role="tab" data-os="linux" aria-selected="false" tabindex="-1">Linux / WSL</button>
+								<button class="binary-subtab" role="tab" data-os="windows" aria-selected="false" tabindex="-1">Windows</button>
+							</div>
+						</div>
+						<div class="binary-subtab-group">
+							<span class="binary-subtab-label">Arch</span>
+							<div class="binary-subtab-options" role="tablist" aria-label="Architecture">
+								<button class="binary-subtab active" role="tab" data-arch="arm64" aria-selected="true">arm64</button>
+								<button class="binary-subtab" role="tab" data-arch="x64" aria-selected="false" tabindex="-1">x64</button>
+							</div>
+						</div>
 					</div>
+
+					<div class="binary-content active" data-binary="macos-arm64">
+						<div class="install-code">
+							<span class="comment"># macOS (Apple Silicon)</span><br />
+							curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-aarch64-apple-darwin.tar.gz<br />
+							tar xzf hunky-aarch64-apple-darwin.tar.gz<br />
+							sudo mv hunky /usr/local/bin/
+						</div>
+					</div>
+					<div class="binary-content" data-binary="macos-x64">
+						<div class="install-code">
+							<span class="comment"># macOS (Intel)</span><br />
+							curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-x86_64-apple-darwin.tar.gz<br />
+							tar xzf hunky-x86_64-apple-darwin.tar.gz<br />
+							sudo mv hunky /usr/local/bin/
+						</div>
+					</div>
+					<div class="binary-content" data-binary="linux-arm64">
+						<div class="install-code">
+							<span class="comment"># Linux / WSL (ARM64)</span><br />
+							curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-aarch64-unknown-linux-gnu.tar.gz<br />
+							tar xzf hunky-aarch64-unknown-linux-gnu.tar.gz<br />
+							sudo mv hunky /usr/local/bin/
+						</div>
+					</div>
+					<div class="binary-content" data-binary="linux-x64">
+						<div class="install-code">
+							<span class="comment"># Linux / WSL (x86_64)</span><br />
+							curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-x86_64-unknown-linux-gnu.tar.gz<br />
+							tar xzf hunky-x86_64-unknown-linux-gnu.tar.gz<br />
+							sudo mv hunky /usr/local/bin/
+						</div>
+					</div>
+					<div class="binary-content" data-binary="windows-arm64">
+						<div class="install-code">
+							<span class="comment"># Windows (ARM64)</span><br />
+							curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-aarch64-pc-windows-msvc.zip<br />
+							powershell -c "Expand-Archive hunky-aarch64-pc-windows-msvc.zip -DestinationPath ."<br />
+							<span class="comment"># Add hunky.exe to your PATH</span><br />
+							powershell -c "New-Item -ItemType Directory -Force -Path $env:USERPROFILE/bin | Out-Null"<br />
+							powershell -c "Move-Item -Path ./hunky.exe -Destination $env:USERPROFILE/bin/hunky.exe -Force"
+						</div>
+					</div>
+					<div class="binary-content" data-binary="windows-x64">
+						<div class="install-code">
+							<span class="comment"># Windows (x86_64)</span><br />
+							curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-x86_64-pc-windows-msvc.zip<br />
+							powershell -c "Expand-Archive hunky-x86_64-pc-windows-msvc.zip -DestinationPath ."<br />
+							<span class="comment"># Add hunky.exe to your PATH</span><br />
+							powershell -c "New-Item -ItemType Directory -Force -Path $env:USERPROFILE/bin | Out-Null"<br />
+							powershell -c "Move-Item -Path ./hunky.exe -Destination $env:USERPROFILE/bin/hunky.exe -Force"
+						</div>
+					</div>
+
 					<p class="install-note">
 						Check the
 						<a href="https://github.com/randymarsh77/hunky/releases" target="_blank" rel="noopener"
@@ -776,6 +863,80 @@
 					}
 				});
 			});
+
+			/* ── Binary sub-tabs ── */
+			var currentOs = 'macos';
+			var currentArch = 'arm64';
+
+			function updateBinaryContent() {
+				var key = currentOs + '-' + currentArch;
+				document.querySelectorAll('.binary-content').forEach(function (el) {
+					el.classList.toggle('active', el.dataset.binary === key);
+				});
+			}
+
+			function activateSubtab(btn) {
+				var group = btn.closest('.binary-subtab-options');
+				group.querySelectorAll('.binary-subtab').forEach(function (t) {
+					t.classList.remove('active');
+					t.setAttribute('aria-selected', 'false');
+					t.setAttribute('tabindex', '-1');
+				});
+				btn.classList.add('active');
+				btn.setAttribute('aria-selected', 'true');
+				btn.removeAttribute('tabindex');
+				if (btn.dataset.os) currentOs = btn.dataset.os;
+				if (btn.dataset.arch) currentArch = btn.dataset.arch;
+				updateBinaryContent();
+			}
+
+			document.querySelectorAll('.binary-subtab').forEach(function (btn) {
+				btn.addEventListener('click', function () {
+					activateSubtab(btn);
+				});
+				btn.addEventListener('keydown', function (e) {
+					var siblings = Array.from(btn.closest('.binary-subtab-options').querySelectorAll('.binary-subtab'));
+					var idx = siblings.indexOf(btn);
+					if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+						e.preventDefault();
+						activateSubtab(siblings[(idx + 1) % siblings.length]);
+						siblings[(idx + 1) % siblings.length].focus();
+					} else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+						e.preventDefault();
+						activateSubtab(siblings[(idx - 1 + siblings.length) % siblings.length]);
+						siblings[(idx - 1 + siblings.length) % siblings.length].focus();
+					}
+				});
+			});
+
+			/* ── Auto-detect OS and architecture ── */
+			(function () {
+				var ua = navigator.userAgent || '';
+				var platform = navigator.platform || '';
+
+				var detectedOs = 'macos';
+				if (/Win/.test(platform)) {
+					detectedOs = 'windows';
+				} else if (/Linux/.test(platform) || /Linux/.test(ua)) {
+					detectedOs = 'linux';
+				}
+
+				// Default to arm64 on macOS (Apple Silicon is prevalent), x64 elsewhere
+				var detectedArch = detectedOs === 'macos' ? 'arm64' : 'x64';
+				if (/arm64|aarch64/i.test(ua) || /arm64|aarch64/i.test(platform)) {
+					detectedArch = 'arm64';
+				} else if (/x86_64|x86-64|Win64|x64|WOW64/i.test(ua)) {
+					detectedArch = 'x64';
+				}
+
+				currentOs = detectedOs;
+				currentArch = detectedArch;
+
+				var osBtn = document.querySelector('.binary-subtab[data-os="' + detectedOs + '"]');
+				if (osBtn) activateSubtab(osBtn);
+				var archBtn = document.querySelector('.binary-subtab[data-arch="' + detectedArch + '"]');
+				if (archBtn) activateSubtab(archBtn);
+			})();
 		</script>
 	</body>
 </html>
