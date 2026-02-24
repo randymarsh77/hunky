@@ -141,9 +141,12 @@ jobs:
         uses: cachix/install-nix-action@v31
 
       - name: Build release binary
+        id: nix-build
         if: runner.os != 'Windows'
         run: |
-          echo "BINARY_PATH=$(nix build .#default --accept-flake-config --print-out-paths --no-link | tee /tmp/store-paths.txt)/bin/${{ matrix.binary }}" >> "$GITHUB_ENV"
+          STORE_PATHS=$(nix build .#default --accept-flake-config --print-out-paths --no-link)
+          echo "BINARY_PATH=${STORE_PATHS}/bin/${{ matrix.binary }}" >> "$GITHUB_ENV"
+          echo "store-paths=${STORE_PATHS}" >> "$GITHUB_OUTPUT"
 
       - name: Build release binary (Windows)
         if: runner.os == 'Windows'
@@ -175,8 +178,7 @@ jobs:
         uses: randymarsh77/OpenCache/save@v1
         if: runner.os != 'Windows'
         with:
-          paths: |
-            $(cat /tmp/store-paths.txt)
+          paths: ${{ steps.nix-build.outputs.store-paths }}
           name: ${{ matrix.os }}
           signing-key: ${{ secrets.NIX_SIGNING_KEY }}
 
