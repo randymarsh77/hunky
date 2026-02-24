@@ -296,6 +296,7 @@
 				gap: 0.25rem;
 				margin-bottom: 1.5rem;
 				flex-wrap: wrap;
+				justify-content: center;
 			}
 			.install-tab {
 				padding: 0.55rem 1.1rem;
@@ -326,20 +327,37 @@
 				background: var(--bg-code);
 				border: 1px solid var(--border);
 				border-radius: var(--radius);
-				padding: 1.25rem 1.5rem;
+				padding: 0.75rem 0;
 				font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
 				font-size: 0.85rem;
 				line-height: 1.8;
 				overflow-x: auto;
-				position: relative;
 			}
 			.install-code .comment {
 				color: var(--text-muted);
 			}
+			.code-line {
+				display: flex;
+				align-items: center;
+				padding: 0 1.5rem;
+				min-height: 1.8em;
+			}
+			.code-line code {
+				flex: 1;
+				min-width: 0;
+				white-space: pre;
+			}
+			.code-line .copy-btn {
+				position: static;
+				flex-shrink: 0;
+				opacity: 0;
+				margin-left: 0.75rem;
+				transition: opacity 0.15s, color 0.2s, border-color 0.2s;
+			}
+			.code-line:hover .copy-btn {
+				opacity: 1;
+			}
 			.copy-btn {
-				position: absolute;
-				top: 0.6rem;
-				right: 0.6rem;
 				background: var(--bg-card);
 				border: 1px solid var(--border);
 				border-radius: 6px;
@@ -379,13 +397,6 @@
 				display: flex;
 				align-items: center;
 				gap: 0.5rem;
-			}
-			.binary-subtab-label {
-				font-size: 0.78rem;
-				color: var(--text-muted);
-				text-transform: uppercase;
-				letter-spacing: 0.05em;
-				font-weight: 600;
 			}
 			.binary-subtab-options {
 				display: flex;
@@ -477,6 +488,13 @@
 				gap: 1.5rem;
 				justify-content: center;
 				margin-bottom: 0.75rem;
+			}
+
+			@media (min-width: 641px) {
+				.install-tabs,
+				.binary-subtabs {
+					justify-content: flex-start;
+				}
 			}
 
 			/* ── Responsive ── */
@@ -660,17 +678,14 @@
 
 				<div class="install-panel active" id="panel-nix" role="tabpanel" aria-labelledby="tab-nix">
 					<div class="install-code">
-						<button class="copy-btn" onclick="copyCode(this)" aria-label="Copy to clipboard">
-							<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg>
-						</button>
-						<span class="comment"># Run directly without installing</span><br />
-						nix run github:randymarsh77/hunky<br />
-						<br />
-						<span class="comment"># Or add to your flake inputs</span><br />
-						hunky.url = "github:randymarsh77/hunky";<br />
-						<br />
-						<span class="comment"># Then use the package</span><br />
-						hunky.packages.${system}.default
+						<div class="code-line"><code><span class="comment"># Run directly without installing</span></code></div>
+						<div class="code-line"><code>nix run github:randymarsh77/hunky</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
+						<div class="code-line" aria-hidden="true"></div>
+						<div class="code-line"><code><span class="comment"># Or add to your flake inputs</span></code></div>
+						<div class="code-line"><code>hunky.url = "github:randymarsh77/hunky";</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
+						<div class="code-line" aria-hidden="true"></div>
+						<div class="code-line"><code><span class="comment"># Then use the package</span></code></div>
+						<div class="code-line"><code>hunky.packages.${system}.default</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
 					</div>
 					<p class="install-note">
 						Requires
@@ -682,7 +697,6 @@
 				<div class="install-panel" id="panel-binary" role="tabpanel" aria-labelledby="tab-binary">
 					<div class="binary-subtabs">
 						<div class="binary-subtab-group">
-							<span class="binary-subtab-label">OS</span>
 							<div class="binary-subtab-options" role="tablist" aria-label="Operating system">
 								<button class="binary-subtab active" role="tab" data-os="macos" aria-selected="true">macOS</button>
 								<button class="binary-subtab" role="tab" data-os="linux" aria-selected="false" tabindex="-1">Linux / WSL</button>
@@ -690,7 +704,6 @@
 							</div>
 						</div>
 						<div class="binary-subtab-group">
-							<span class="binary-subtab-label">Arch</span>
 							<div class="binary-subtab-options" role="tablist" aria-label="Architecture">
 								<button class="binary-subtab active" role="tab" data-arch="arm64" aria-selected="true">arm64</button>
 								<button class="binary-subtab" role="tab" data-arch="x64" aria-selected="false" tabindex="-1">x64</button>
@@ -700,72 +713,54 @@
 
 					<div class="binary-content active" data-binary="macos-arm64">
 						<div class="install-code">
-							<button class="copy-btn" onclick="copyCode(this)" aria-label="Copy to clipboard">
-								<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg>
-							</button>
-							<span class="comment"># macOS (Apple Silicon)</span><br />
-							curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-aarch64-apple-darwin.tar.gz<br />
-							tar xzf hunky-aarch64-apple-darwin.tar.gz<br />
-							sudo mv hunky /usr/local/bin/
+							<div class="code-line"><code><span class="comment"># macOS (Apple Silicon)</span></code></div>
+							<div class="code-line"><code>curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-aarch64-apple-darwin.tar.gz</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
+							<div class="code-line"><code>tar xzf hunky-aarch64-apple-darwin.tar.gz</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
+							<div class="code-line"><code>sudo mv hunky /usr/local/bin/</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
 						</div>
 					</div>
 					<div class="binary-content" data-binary="macos-x64">
 						<div class="install-code">
-							<button class="copy-btn" onclick="copyCode(this)" aria-label="Copy to clipboard">
-								<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg>
-							</button>
-							<span class="comment"># macOS (Intel)</span><br />
-							curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-x86_64-apple-darwin.tar.gz<br />
-							tar xzf hunky-x86_64-apple-darwin.tar.gz<br />
-							sudo mv hunky /usr/local/bin/
+							<div class="code-line"><code><span class="comment"># macOS (Intel)</span></code></div>
+							<div class="code-line"><code>curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-x86_64-apple-darwin.tar.gz</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
+							<div class="code-line"><code>tar xzf hunky-x86_64-apple-darwin.tar.gz</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
+							<div class="code-line"><code>sudo mv hunky /usr/local/bin/</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
 						</div>
 					</div>
 					<div class="binary-content" data-binary="linux-arm64">
 						<div class="install-code">
-							<button class="copy-btn" onclick="copyCode(this)" aria-label="Copy to clipboard">
-								<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg>
-							</button>
-							<span class="comment"># Linux / WSL (ARM64)</span><br />
-							curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-aarch64-unknown-linux-gnu.tar.gz<br />
-							tar xzf hunky-aarch64-unknown-linux-gnu.tar.gz<br />
-							sudo mv hunky /usr/local/bin/
+							<div class="code-line"><code><span class="comment"># Linux / WSL (ARM64)</span></code></div>
+							<div class="code-line"><code>curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-aarch64-unknown-linux-gnu.tar.gz</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
+							<div class="code-line"><code>tar xzf hunky-aarch64-unknown-linux-gnu.tar.gz</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
+							<div class="code-line"><code>sudo mv hunky /usr/local/bin/</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
 						</div>
 					</div>
 					<div class="binary-content" data-binary="linux-x64">
 						<div class="install-code">
-							<button class="copy-btn" onclick="copyCode(this)" aria-label="Copy to clipboard">
-								<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg>
-							</button>
-							<span class="comment"># Linux / WSL (x86_64)</span><br />
-							curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-x86_64-unknown-linux-gnu.tar.gz<br />
-							tar xzf hunky-x86_64-unknown-linux-gnu.tar.gz<br />
-							sudo mv hunky /usr/local/bin/
+							<div class="code-line"><code><span class="comment"># Linux / WSL (x86_64)</span></code></div>
+							<div class="code-line"><code>curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-x86_64-unknown-linux-gnu.tar.gz</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
+							<div class="code-line"><code>tar xzf hunky-x86_64-unknown-linux-gnu.tar.gz</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
+							<div class="code-line"><code>sudo mv hunky /usr/local/bin/</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
 						</div>
 					</div>
 					<div class="binary-content" data-binary="windows-arm64">
 						<div class="install-code">
-							<button class="copy-btn" onclick="copyCode(this)" aria-label="Copy to clipboard">
-								<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg>
-							</button>
-							<span class="comment"># Windows (ARM64)</span><br />
-							curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-aarch64-pc-windows-msvc.zip<br />
-							powershell -c "Expand-Archive hunky-aarch64-pc-windows-msvc.zip -DestinationPath ."<br />
-							<span class="comment"># Add hunky.exe to your PATH</span><br />
-							powershell -c "New-Item -ItemType Directory -Force -Path $env:USERPROFILE/bin | Out-Null"<br />
-							powershell -c "Move-Item -Path ./hunky.exe -Destination $env:USERPROFILE/bin/hunky.exe -Force"
+							<div class="code-line"><code><span class="comment"># Windows (ARM64)</span></code></div>
+							<div class="code-line"><code>curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-aarch64-pc-windows-msvc.zip</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
+							<div class="code-line"><code>powershell -c "Expand-Archive hunky-aarch64-pc-windows-msvc.zip -DestinationPath ."</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
+							<div class="code-line"><code><span class="comment"># Add hunky.exe to your PATH</span></code></div>
+							<div class="code-line"><code>powershell -c "New-Item -ItemType Directory -Force -Path $env:USERPROFILE/bin | Out-Null"</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
+							<div class="code-line"><code>powershell -c "Move-Item -Path ./hunky.exe -Destination $env:USERPROFILE/bin/hunky.exe -Force"</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
 						</div>
 					</div>
 					<div class="binary-content" data-binary="windows-x64">
 						<div class="install-code">
-							<button class="copy-btn" onclick="copyCode(this)" aria-label="Copy to clipboard">
-								<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg>
-							</button>
-							<span class="comment"># Windows (x86_64)</span><br />
-							curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-x86_64-pc-windows-msvc.zip<br />
-							powershell -c "Expand-Archive hunky-x86_64-pc-windows-msvc.zip -DestinationPath ."<br />
-							<span class="comment"># Add hunky.exe to your PATH</span><br />
-							powershell -c "New-Item -ItemType Directory -Force -Path $env:USERPROFILE/bin | Out-Null"<br />
-							powershell -c "Move-Item -Path ./hunky.exe -Destination $env:USERPROFILE/bin/hunky.exe -Force"
+							<div class="code-line"><code><span class="comment"># Windows (x86_64)</span></code></div>
+							<div class="code-line"><code>curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-x86_64-pc-windows-msvc.zip</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
+							<div class="code-line"><code>powershell -c "Expand-Archive hunky-x86_64-pc-windows-msvc.zip -DestinationPath ."</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
+							<div class="code-line"><code><span class="comment"># Add hunky.exe to your PATH</span></code></div>
+							<div class="code-line"><code>powershell -c "New-Item -ItemType Directory -Force -Path $env:USERPROFILE/bin | Out-Null"</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
+							<div class="code-line"><code>powershell -c "Move-Item -Path ./hunky.exe -Destination $env:USERPROFILE/bin/hunky.exe -Force"</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
 						</div>
 					</div>
 
@@ -780,18 +775,15 @@
 
 				<div class="install-panel" id="panel-source" role="tabpanel" aria-labelledby="tab-source">
 					<div class="install-code">
-						<button class="copy-btn" onclick="copyCode(this)" aria-label="Copy to clipboard">
-							<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg>
-						</button>
-						<span class="comment"># Clone the repository</span><br />
-						git clone https://github.com/randymarsh77/hunky.git<br />
-						cd hunky<br />
-						<br />
-						<span class="comment"># Build with Cargo</span><br />
-						cargo build --release<br />
-						<br />
-						<span class="comment"># The binary will be at target/release/hunky</span><br />
-						./target/release/hunky --help
+						<div class="code-line"><code><span class="comment"># Clone the repository</span></code></div>
+						<div class="code-line"><code>git clone https://github.com/randymarsh77/hunky.git</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
+						<div class="code-line"><code>cd hunky</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
+						<div class="code-line" aria-hidden="true"></div>
+						<div class="code-line"><code><span class="comment"># Build with Cargo</span></code></div>
+						<div class="code-line"><code>cargo build --release</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
+						<div class="code-line" aria-hidden="true"></div>
+						<div class="code-line"><code><span class="comment"># The binary will be at target/release/hunky</span></code></div>
+						<div class="code-line"><code>./target/release/hunky --help</code><button class="copy-btn" onclick="copyLine(this)" aria-label="Copy to clipboard"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button></div>
 					</div>
 					<p class="install-note">
 						Requires the
@@ -987,12 +979,10 @@
 			})();
 
 			/* ── Copy to clipboard ── */
-			function copyCode(btn) {
-				var codeBlock = btn.closest('.install-code');
-				var clone = codeBlock.cloneNode(true);
-				var btnClone = clone.querySelector('.copy-btn');
-				if (btnClone) btnClone.remove();
-				var text = clone.textContent.trim();
+			function copyLine(btn) {
+				var line = btn.closest('.code-line');
+				var code = line.querySelector('code');
+				var text = code.textContent.trim();
 				navigator.clipboard.writeText(text).then(function () {
 					btn.classList.add('copied');
 					btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3.5 9l3 3 6-8"/></svg>';
