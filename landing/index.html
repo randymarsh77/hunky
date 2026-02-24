@@ -336,6 +336,29 @@
 			.install-code .comment {
 				color: var(--text-muted);
 			}
+			.copy-btn {
+				position: absolute;
+				top: 0.6rem;
+				right: 0.6rem;
+				background: var(--bg-card);
+				border: 1px solid var(--border);
+				border-radius: 6px;
+				color: var(--text-muted);
+				cursor: pointer;
+				padding: 0.3rem 0.45rem;
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				transition: color 0.2s, border-color 0.2s;
+			}
+			.copy-btn:hover {
+				color: var(--text);
+				border-color: var(--accent);
+			}
+			.copy-btn.copied {
+				color: var(--green);
+				border-color: var(--green);
+			}
 			.install-note {
 				font-size: 0.85rem;
 				color: var(--text-muted);
@@ -350,6 +373,7 @@
 				margin-bottom: 1.25rem;
 				flex-wrap: wrap;
 				align-items: center;
+				justify-content: center;
 			}
 			.binary-subtab-group {
 				display: flex;
@@ -636,6 +660,9 @@
 
 				<div class="install-panel active" id="panel-nix" role="tabpanel" aria-labelledby="tab-nix">
 					<div class="install-code">
+						<button class="copy-btn" onclick="copyCode(this)" aria-label="Copy to clipboard">
+							<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg>
+						</button>
 						<span class="comment"># Run directly without installing</span><br />
 						nix run github:randymarsh77/hunky<br />
 						<br />
@@ -673,6 +700,9 @@
 
 					<div class="binary-content active" data-binary="macos-arm64">
 						<div class="install-code">
+							<button class="copy-btn" onclick="copyCode(this)" aria-label="Copy to clipboard">
+								<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg>
+							</button>
 							<span class="comment"># macOS (Apple Silicon)</span><br />
 							curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-aarch64-apple-darwin.tar.gz<br />
 							tar xzf hunky-aarch64-apple-darwin.tar.gz<br />
@@ -681,6 +711,9 @@
 					</div>
 					<div class="binary-content" data-binary="macos-x64">
 						<div class="install-code">
+							<button class="copy-btn" onclick="copyCode(this)" aria-label="Copy to clipboard">
+								<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg>
+							</button>
 							<span class="comment"># macOS (Intel)</span><br />
 							curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-x86_64-apple-darwin.tar.gz<br />
 							tar xzf hunky-x86_64-apple-darwin.tar.gz<br />
@@ -689,6 +722,9 @@
 					</div>
 					<div class="binary-content" data-binary="linux-arm64">
 						<div class="install-code">
+							<button class="copy-btn" onclick="copyCode(this)" aria-label="Copy to clipboard">
+								<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg>
+							</button>
 							<span class="comment"># Linux / WSL (ARM64)</span><br />
 							curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-aarch64-unknown-linux-gnu.tar.gz<br />
 							tar xzf hunky-aarch64-unknown-linux-gnu.tar.gz<br />
@@ -697,6 +733,9 @@
 					</div>
 					<div class="binary-content" data-binary="linux-x64">
 						<div class="install-code">
+							<button class="copy-btn" onclick="copyCode(this)" aria-label="Copy to clipboard">
+								<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg>
+							</button>
 							<span class="comment"># Linux / WSL (x86_64)</span><br />
 							curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-x86_64-unknown-linux-gnu.tar.gz<br />
 							tar xzf hunky-x86_64-unknown-linux-gnu.tar.gz<br />
@@ -705,6 +744,9 @@
 					</div>
 					<div class="binary-content" data-binary="windows-arm64">
 						<div class="install-code">
+							<button class="copy-btn" onclick="copyCode(this)" aria-label="Copy to clipboard">
+								<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg>
+							</button>
 							<span class="comment"># Windows (ARM64)</span><br />
 							curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-aarch64-pc-windows-msvc.zip<br />
 							powershell -c "Expand-Archive hunky-aarch64-pc-windows-msvc.zip -DestinationPath ."<br />
@@ -715,6 +757,9 @@
 					</div>
 					<div class="binary-content" data-binary="windows-x64">
 						<div class="install-code">
+							<button class="copy-btn" onclick="copyCode(this)" aria-label="Copy to clipboard">
+								<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg>
+							</button>
 							<span class="comment"># Windows (x86_64)</span><br />
 							curl -LO https://github.com/randymarsh77/hunky/releases/latest/download/hunky-x86_64-pc-windows-msvc.zip<br />
 							powershell -c "Expand-Archive hunky-x86_64-pc-windows-msvc.zip -DestinationPath ."<br />
@@ -735,6 +780,9 @@
 
 				<div class="install-panel" id="panel-source" role="tabpanel" aria-labelledby="tab-source">
 					<div class="install-code">
+						<button class="copy-btn" onclick="copyCode(this)" aria-label="Copy to clipboard">
+							<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg>
+						</button>
 						<span class="comment"># Clone the repository</span><br />
 						git clone https://github.com/randymarsh77/hunky.git<br />
 						cd hunky<br />
@@ -937,6 +985,23 @@
 				var archBtn = document.querySelector('.binary-subtab[data-arch="' + detectedArch + '"]');
 				if (archBtn) activateSubtab(archBtn);
 			})();
+
+			/* ── Copy to clipboard ── */
+			function copyCode(btn) {
+				var codeBlock = btn.closest('.install-code');
+				var clone = codeBlock.cloneNode(true);
+				var btnClone = clone.querySelector('.copy-btn');
+				if (btnClone) btnClone.remove();
+				var text = clone.textContent.trim();
+				navigator.clipboard.writeText(text).then(function () {
+					btn.classList.add('copied');
+					btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3.5 9l3 3 6-8"/></svg>';
+					setTimeout(function () {
+						btn.classList.remove('copied');
+						btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg>';
+					}, 2000);
+				}).catch(function () {});
+			}
 		</script>
 	</body>
 </html>
