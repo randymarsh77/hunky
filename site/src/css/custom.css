@@ -17,6 +17,89 @@
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
 }
 
+/* Installation section */
+.install-section {
+  padding: 2rem 0 3rem;
+}
+
+.install-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  justify-content: center;
+}
+
+.install-platform-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.install-btn-group {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.install-commands {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.install-command-line {
+  display: flex;
+  align-items: center;
+  background: var(--ifm-code-background);
+  border-radius: var(--ifm-code-border-radius);
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: var(--ifm-code-font-size);
+}
+
+.install-command-line code {
+  flex: 1;
+  background: none;
+  border: none;
+  padding: 0;
+  word-break: break-all;
+}
+
+.install-copy-btn {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.2rem 0.4rem;
+  margin-left: 0.5rem;
+  color: var(--ifm-color-emphasis-700);
+  transition: background 0.15s, color 0.15s;
+}
+
+.install-copy-btn:hover {
+  background: var(--ifm-color-emphasis-200);
+  color: var(--ifm-color-emphasis-900);
+}
+
+@media (min-width: 576px) {
+  .install-controls {
+    justify-content: center;
+  }
+}
+
+@media (min-width: 768px) {
+  .install-controls {
+    justify-content: flex-start;
+  }
+
+  .install-commands {
+    margin: 0;
+  }
+}
+
 /* For readability concerns, you should choose a lighter palette in dark mode. */
 [data-theme='dark'] {
   --ifm-color-primary: #25c2a0;
