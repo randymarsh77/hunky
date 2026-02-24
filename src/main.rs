@@ -1,9 +1,11 @@
 mod app;
 mod diff;
+#[cfg(feature = "native")]
 mod git;
 mod logger;
 mod syntax;
 mod ui;
+#[cfg(feature = "native")]
 mod watcher;
 
 use anyhow::Result;

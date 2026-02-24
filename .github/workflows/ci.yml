@@ -330,6 +330,20 @@ jobs:
           name: nix-cache-static
           path: site/static/cache
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack
+
+      - name: Build WASM demo
+        run: wasm-pack build demo --target web --out-dir web/pkg --release
+
+      - name: Stage demo for site
+        run: cp -r demo/web site/static/demo-app
+
       - name: Build Docusaurus site
         run: npm run build
         working-directory: site

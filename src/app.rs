@@ -1,21 +1,29 @@
+#[cfg(feature = "native")]
 use anyhow::Result;
+#[cfg(feature = "native")]
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+#[cfg(feature = "native")]
+use ratatui::backend::CrosstermBackend;
 use ratatui::{
-    backend::{Backend, CrosstermBackend},
+    backend::Backend,
     Terminal,
 };
 use std::collections::HashMap;
+#[cfg(feature = "native")]
 use std::io::{self};
 use std::time::{Duration, Instant};
+#[cfg(feature = "native")]
 use tokio::sync::mpsc;
 
 use crate::diff::{CommitInfo, DiffSnapshot, FileChange};
+#[cfg(feature = "native")]
 use crate::git::GitRepo;
 use crate::ui::UI;
+#[cfg(feature = "native")]
 use crate::watcher::FileWatcher;
 
 // Debug logging helper
@@ -63,6 +71,7 @@ impl StreamSpeed {
 }
 
 pub struct App {
+    #[cfg(feature = "native")]
     git_repo: GitRepo,
     snapshots: Vec<DiffSnapshot>,
     current_snapshot_index: usize,
@@ -78,6 +87,7 @@ pub struct App {
     selected_line_index: usize,
     // Track last selected line per hunk (file_index, hunk_index) -> line_index
     hunk_line_memory: HashMap<(usize, usize), usize>,
+    #[cfg(feature = "native")]
     snapshot_receiver: mpsc::UnboundedReceiver<DiffSnapshot>,
     last_auto_advance: Instant,
     scroll_offset: u16,
@@ -90,6 +100,7 @@ pub struct App {
     last_diff_viewport_height: u16,
     last_help_viewport_height: u16,
     needs_full_redraw: bool,
+    #[cfg(feature = "native")]
     _watcher: FileWatcher,
     // Review mode state
     review_commits: Vec<CommitInfo>,
@@ -99,6 +110,44 @@ pub struct App {
 }
 
 impl App {
+    /// Create an `App` pre-populated with a [`DiffSnapshot`].
+    ///
+    /// This constructor requires no git repository or file-system watcher and
+    /// is used by the web demo (and tests) to drive the real UI without
+    /// native dependencies.
+    #[cfg(not(feature = "native"))]
+    pub fn from_snapshot(snapshot: DiffSnapshot) -> Self {
+        Self {
+            snapshots: vec![snapshot],
+            current_snapshot_index: 0,
+            current_file_index: 0,
+            current_hunk_index: 0,
+            mode: Mode::View,
+            show_filenames_only: false,
+            wrap_lines: false,
+            show_help: false,
+            syntax_highlighting: true,
+            focus: FocusPane::HunkView,
+            line_selection_mode: false,
+            selected_line_index: 0,
+            hunk_line_memory: HashMap::new(),
+            last_auto_advance: Instant::now(),
+            scroll_offset: 0,
+            help_scroll_offset: 0,
+            streaming_start_snapshot: None,
+            show_extended_help: false,
+            extended_help_scroll_offset: 0,
+            last_diff_viewport_height: 20,
+            last_help_viewport_height: 20,
+            needs_full_redraw: true,
+            review_commits: Vec::new(),
+            review_commit_cursor: 0,
+            review_selecting_commit: false,
+            review_snapshot: None,
+        }
+    }
+
+    #[cfg(feature = "native")]
     pub async fn new(repo_path: &str) -> Result<Self> {
         let git_repo = GitRepo::new(repo_path)?;
 
@@ -167,6 +216,7 @@ impl App {
         Ok(app)
     }
 
+    #[cfg(feature = "native")]
     pub async fn run(&mut self) -> Result<()> {
         // Setup terminal
         enable_raw_mode()?;
@@ -189,6 +239,7 @@ impl App {
         result
     }
 
+    #[cfg(feature = "native")]
     async fn run_loop<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
         loop {
             // Check for new snapshots
@@ -867,6 +918,7 @@ impl App {
         }
     }
 
+    #[allow(dead_code)]
     fn cycle_focus_backward(&mut self) {
         let old_focus = self.focus;
         self.focus = match self.focus {
@@ -912,6 +964,7 @@ impl App {
         }
     }
 
+    #[cfg(feature = "native")]
     fn stage_current_selection(&mut self) {
         let mut refresh_needed = false;
 
@@ -1079,6 +1132,7 @@ impl App {
         }
     }
 
+    #[cfg(feature = "native")]
     fn open_commit_mode(&mut self) -> Result<()> {
         // Temporarily suspend the TUI so git/editor can take over the terminal.
         disable_raw_mode()?;
@@ -1104,6 +1158,7 @@ impl App {
         Ok(())
     }
 
+    #[cfg(feature = "native")]
     fn annotate_staged_lines(&self, snapshot: &mut DiffSnapshot) {
         for file in &mut snapshot.files {
             for hunk in &mut file.hunks {
@@ -1131,6 +1186,7 @@ impl App {
         }
     }
 
+    #[cfg(feature = "native")]
     fn refresh_current_snapshot_from_git(&mut self) {
         let previous_selected_line = self.selected_line_index;
 
@@ -1186,6 +1242,7 @@ impl App {
         }
     }
 
+    #[allow(dead_code)]
     fn select_nearest_change_line(&mut self, preferred_index: usize) {
         if let Some(snapshot) = self.current_snapshot() {
             if let Some(file) = snapshot.files.get(self.current_file_index) {
@@ -1235,6 +1292,7 @@ impl App {
         }
     }
 
+    #[cfg(feature = "native")]
     fn enter_review_mode(&mut self) {
         match self.git_repo.get_recent_commits(20) {
             Ok(commits) => {
@@ -1254,6 +1312,7 @@ impl App {
         }
     }
 
+    #[cfg(feature = "native")]
     fn select_review_commit(&mut self) {
         if self.review_commit_cursor >= self.review_commits.len() {
             return;
@@ -1299,6 +1358,7 @@ impl App {
         debug_log("Exited review mode".to_string());
     }
 
+    #[allow(dead_code)]
     fn toggle_review_acceptance(&mut self) {
         if let Some(ref mut snapshot) = self.review_snapshot {
             if let Some(file) = snapshot.files.get_mut(self.current_file_index) {
@@ -1468,6 +1528,193 @@ impl App {
         } else {
             self.extended_help_scroll_offset = 0;
         }
+    }
+
+    /// Draw the UI into the given terminal and update cached viewport heights.
+    ///
+    /// This is the same drawing logic used by the native event loop, extracted
+    /// so the web demo (or tests) can call it with any ratatui [`Backend`].
+    pub fn draw<B: Backend>(&mut self, terminal: &mut Terminal<B>) {
+        if self.needs_full_redraw {
+            let _ = terminal.clear();
+            self.needs_full_redraw = false;
+        }
+
+        let mut diff_viewport_height = 0u16;
+        let mut help_viewport_height = 0u16;
+        let _ = terminal.draw(|f| {
+            let ui = UI::new(self);
+            let (dh, hh, _) = ui.draw(f);
+            diff_viewport_height = dh;
+            help_viewport_height = hh;
+        });
+
+        self.last_diff_viewport_height = diff_viewport_height;
+        self.last_help_viewport_height = help_viewport_height;
+
+        self.clamp_scroll_offset(diff_viewport_height);
+        if self.show_help {
+            self.clamp_help_scroll_offset(help_viewport_height);
+        }
+        if self.show_extended_help {
+            self.clamp_extended_help_scroll_offset(help_viewport_height);
+        }
+    }
+
+    /// Handle a key event described by its DOM `key` string (e.g. `"j"`, `"ArrowDown"`, `"Escape"`).
+    ///
+    /// Returns `false` when the application should quit.
+    pub fn handle_key_str(&mut self, key: &str) -> bool {
+        // Extended help view
+        if self.show_extended_help {
+            match key {
+                "j" | "ArrowDown" => {
+                    let content_height = self.extended_help_content_height() as u16;
+                    let viewport_height = self.last_help_viewport_height;
+                    if content_height > viewport_height {
+                        let max_scroll = content_height.saturating_sub(viewport_height);
+                        if self.extended_help_scroll_offset < max_scroll {
+                            self.extended_help_scroll_offset += 1;
+                        }
+                    }
+                }
+                "k" | "ArrowUp" => {
+                    self.extended_help_scroll_offset =
+                        self.extended_help_scroll_offset.saturating_sub(1);
+                }
+                "Escape" => {
+                    self.show_extended_help = false;
+                    self.extended_help_scroll_offset = 0;
+                }
+                _ => {}
+            }
+            return true;
+        }
+
+        // Commit picker overlay
+        if self.review_selecting_commit {
+            match key {
+                "q" | "Q" => return false,
+                "j" | "ArrowDown" => {
+                    if !self.review_commits.is_empty()
+                        && self.review_commit_cursor + 1 < self.review_commits.len()
+                    {
+                        self.review_commit_cursor += 1;
+                    }
+                }
+                "k" | "ArrowUp" => {
+                    self.review_commit_cursor = self.review_commit_cursor.saturating_sub(1);
+                }
+                "Escape" => {
+                    self.review_selecting_commit = false;
+                    self.review_commits.clear();
+                    self.mode = Mode::View;
+                }
+                _ => {}
+            }
+            return true;
+        }
+
+        // Normal key handling
+        match key {
+            "q" | "Q" => return false,
+            " " => self.advance_hunk(),
+            "b" | "B" => match self.mode {
+                Mode::View | Mode::Review => self.previous_hunk(),
+                Mode::Streaming(StreamingType::Buffered) => self.previous_hunk(),
+                Mode::Streaming(StreamingType::Auto(_)) => {}
+            },
+            "Tab" => self.cycle_focus_forward(),
+            "j" | "ArrowDown" => match self.focus {
+                FocusPane::FileList => {
+                    self.next_file();
+                    self.scroll_offset = 0;
+                }
+                FocusPane::HunkView => {
+                    if self.line_selection_mode {
+                        self.next_change_line();
+                    } else {
+                        let content_height = self.current_hunk_content_height() as u16;
+                        let viewport_height = self.last_diff_viewport_height;
+                        if content_height > viewport_height {
+                            let max_scroll = content_height.saturating_sub(viewport_height);
+                            if self.scroll_offset < max_scroll {
+                                self.scroll_offset += 1;
+                            }
+                        }
+                    }
+                }
+                FocusPane::HelpSidebar => {
+                    let content_height = self.help_content_height() as u16;
+                    let viewport_height = self.last_help_viewport_height;
+                    if content_height > viewport_height {
+                        let max_scroll = content_height.saturating_sub(viewport_height);
+                        if self.help_scroll_offset < max_scroll {
+                            self.help_scroll_offset += 1;
+                        }
+                    }
+                }
+            },
+            "k" | "ArrowUp" => match self.focus {
+                FocusPane::FileList => {
+                    self.previous_file();
+                    self.scroll_offset = 0;
+                }
+                FocusPane::HunkView => {
+                    if self.line_selection_mode {
+                        self.previous_change_line();
+                    } else {
+                        self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                    }
+                }
+                FocusPane::HelpSidebar => {
+                    self.help_scroll_offset = self.help_scroll_offset.saturating_sub(1);
+                }
+            },
+            "n" => {
+                self.next_file();
+                self.scroll_offset = 0;
+            }
+            "p" => {
+                self.previous_file();
+                self.scroll_offset = 0;
+            }
+            "m" => {
+                if self.mode != Mode::Review {
+                    self.cycle_mode();
+                }
+            }
+            "f" => self.show_filenames_only = !self.show_filenames_only,
+            "w" => self.wrap_lines = !self.wrap_lines,
+            "y" => self.syntax_highlighting = !self.syntax_highlighting,
+            "l" | "L" => self.toggle_line_selection_mode(),
+            "h" => {
+                self.show_help = !self.show_help;
+                self.help_scroll_offset = 0;
+                if !self.show_help && self.focus == FocusPane::HelpSidebar {
+                    self.focus = FocusPane::HunkView;
+                }
+            }
+            "H" => {
+                self.show_extended_help = !self.show_extended_help;
+                self.extended_help_scroll_offset = 0;
+            }
+            "Escape" => {
+                if self.mode == Mode::Review {
+                    self.exit_review_mode();
+                } else {
+                    self.show_extended_help = false;
+                    self.extended_help_scroll_offset = 0;
+                    self.mode = Mode::View;
+                    self.line_selection_mode = false;
+                    self.focus = FocusPane::HunkView;
+                    self.show_help = false;
+                    self.help_scroll_offset = 0;
+                }
+            }
+            _ => {}
+        }
+        true
     }
 }
 

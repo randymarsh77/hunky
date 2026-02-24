@@ -1,3 +1,9 @@
+pub mod app;
 pub mod diff;
+#[cfg(feature = "native")]
 pub mod git;
 pub mod logger;
+pub mod syntax;
+pub mod ui;
+#[cfg(feature = "native")]
+pub mod watcher;

@@ -1,0 +1,19 @@
+[package]
+name = "hunky-demo"
+version = "0.1.0"
+edition = "2021"
+description = "Interactive web demo of hunky — a TUI for streaming git changes"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[dependencies]
+hunky = { path = "..", default-features = false }
+tui2web = { git = "https://github.com/randymarsh77/tui2web.git" }
+ratatui = { version = "0.29", default-features = false }
+wasm-bindgen = "0.2"
+console_error_panic_hook = "0.1"
