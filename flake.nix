@@ -6,7 +6,8 @@
     # To enable signature verification, generate a signing key pair with
     # nix-store --generate-binary-cache-key hunky-cache-1 private.pem public.pem
     # then add the private key as the NIX_SIGNING_KEY CI secret and uncomment:
-    # extra-trusted-public-keys = [ "hunky-cache-1:<base64-public-key>" ];
+    extra-trusted-public-keys =
+      [ "hunky-cache-1:e23PCX1ua3W4XhLuyANWOKkgmxoypoKdSYthZ+q/v1k=" ];
   };
 
   inputs = {
@@ -22,26 +23,13 @@
     };
   };
 
-  outputs =
-    {
-      self,
-      nixpkgs,
-      rust-overlay,
-      flake-utils,
-      opencache,
-    }:
-    flake-utils.lib.eachDefaultSystem (
-      system:
+  outputs = { self, nixpkgs, rust-overlay, flake-utils, opencache, }:
+    flake-utils.lib.eachDefaultSystem (system:
       let
         overlays = [ (import rust-overlay) ];
-        pkgs = import nixpkgs {
-          inherit system overlays;
-        };
+        pkgs = import nixpkgs { inherit system overlays; };
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
-          extensions = [
-            "rust-src"
-            "rust-analyzer"
-          ];
+          extensions = [ "rust-src" "rust-analyzer" ];
         };
         hunkyPackage = pkgs.rustPlatform.buildRustPackage {
           pname = "hunky";
@@ -52,8 +40,7 @@
           nativeCheckInputs = with pkgs; [ git ];
           buildInputs = with pkgs; [ openssl ];
         };
-      in
-      rec {
+      in rec {
         packages = {
           default = hunkyPackage;
           hunky = hunkyPackage;
@@ -86,6 +73,5 @@
             echo "Cargo version: $(cargo --version)"
           '';
         };
-      }
-    );
+      });
 }

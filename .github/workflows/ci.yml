@@ -143,7 +143,7 @@ jobs:
       - name: Build release binary
         if: runner.os != 'Windows'
         run: |
-          echo "BINARY_PATH=$(nix build .#default --accept-flake-config --print-out-paths --no-link)/bin/${{ matrix.binary }}" >> "$GITHUB_ENV"
+          echo "BINARY_PATH=$(nix build .#default --accept-flake-config --print-out-paths --no-link | tee /tmp/store-paths.txt)/bin/${{ matrix.binary }}" >> "$GITHUB_ENV"
 
       - name: Build release binary (Windows)
         if: runner.os == 'Windows'
@@ -170,6 +170,15 @@ jobs:
         with:
           name: ${{ matrix.archive }}
           path: ${{ matrix.archive }}
+
+      - name: Cache Nix Binaries
+        uses: randymarsh77/OpenCache/save@v1
+        if: runner.os != 'Windows'
+        with:
+          paths: |
+            $(cat /tmp/store-paths.txt)
+          name: ${{ matrix.os }}
+          signing-key: ${{ secrets.NIX_SIGNING_KEY }}
 
   coverage:
     runs-on: ubuntu-latest
@@ -216,7 +225,7 @@ jobs:
 
   deploy-cache:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    needs: [build-test-run]
+    needs: [release-builds]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -231,42 +240,16 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
 
-      - name: Build flake
-        run: nix build .#default --print-out-paths | tee /tmp/store-paths.txt
+      - uses: randymarsh77/OpenCache/restore@v1
+        id: restore
 
-      - name: Setup OpenCache
-        run: |
-          OPENCACHE=$(nix build .#opencache --print-out-paths --no-link)
-          echo "OPENCACHE=$OPENCACHE" >> "$GITHUB_ENV"
-
-      - name: Start OpenCache
-        env:
-          STORAGE_BACKEND: github-releases
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          LOCAL_STORAGE_PATH: /tmp/opencache-data
-          PORT: 8080
-        run: |
-          $OPENCACHE/bin/opencache &
-          echo "SERVER_PID=$!" >> "$GITHUB_ENV"
-          for i in $(seq 1 10); do
-            curl -sf http://localhost:8080/nix-cache-info && break
-            sleep 1
-          done
-
-      - name: Push to cache
-        run: |
-          while IFS= read -r p; do
-            nix copy --to "http://localhost:8080?compression=none" "$p"
-          done < /tmp/store-paths.txt
-
-      - name: Stop OpenCache
-        run: kill "$SERVER_PID" || true
-
-      - name: Generate static cache site
-        env:
-          LOCAL_STORAGE_PATH: /tmp/opencache-data
-          OUTPUT_DIR: ./nix-cache-static
-        run: $OPENCACHE/bin/opencache-generate-static
+      - uses: randymarsh77/OpenCache/deploy@v1
+        with:
+          paths-file: ${{ steps.restore.outputs.paths-file }}
+          export-dir: ${{ steps.restore.outputs.export-dir }}
+          backend: github-releases
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          static: ./nix-cache-static
 
       - name: Upload cache artifact
         uses: actions/upload-artifact@v4
