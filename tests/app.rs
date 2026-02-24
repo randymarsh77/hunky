@@ -368,6 +368,58 @@ async fn ui_draw_renders_mode_and_help_states() {
 }
 
 #[tokio::test]
+async fn ui_draw_clears_previous_hunk_text_when_advancing() {
+    let repo = TestRepo::new();
+    let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+        .await
+        .expect("failed to create app");
+
+    let path = PathBuf::from("garble.txt");
+    let snapshot = DiffSnapshot {
+        timestamp: SystemTime::now(),
+        files: vec![FileChange {
+            path: path.clone(),
+            status: "Modified".to_string(),
+            hunks: vec![
+                Hunk::new(
+                    1,
+                    1,
+                    vec![
+                        "-old\n".to_string(),
+                        "+new\n".to_string(),
+                        "+GARBLED_MARKER_SHOULD_NOT_PERSIST\n".to_string(),
+                        "+line4\n".to_string(),
+                        "+line5\n".to_string(),
+                    ],
+                    &path,
+                ),
+                Hunk::new(10, 10, vec!["+short\n".to_string()], &path),
+            ],
+        }],
+    };
+    app.snapshots = vec![snapshot];
+    app.current_snapshot_index = 0;
+
+    let backend = TestBackend::new(120, 20);
+    let mut terminal = Terminal::new(backend).expect("failed to create terminal");
+    terminal
+        .draw(|frame| {
+            UI::new(&app).draw(frame);
+        })
+        .expect("failed to draw first hunk");
+    assert!(render_buffer_to_string(&terminal).contains("GARBLED_MARKER_SHOULD_NOT_PERSIST"));
+
+    app.advance_hunk();
+    terminal
+        .draw(|frame| {
+            UI::new(&app).draw(frame);
+        })
+        .expect("failed to draw second hunk");
+
+    assert!(!render_buffer_to_string(&terminal).contains("GARBLED_MARKER_SHOULD_NOT_PERSIST"));
+}
+
+#[tokio::test]
 async fn stage_current_selection_handles_line_hunk_and_file_modes() {
     let repo = TestRepo::new();
     repo.write_file("example.txt", "line 1\nline 2\nline 3\n");
