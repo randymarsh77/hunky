@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
@@ -627,6 +627,7 @@ impl<'a> UI<'a> {
             paragraph = paragraph.wrap(Wrap { trim: false });
         }
 
+        frame.render_widget(Clear, area);
         frame.render_widget(paragraph, area);
         viewport_height
     }
