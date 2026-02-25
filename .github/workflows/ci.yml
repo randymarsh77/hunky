@@ -140,6 +140,10 @@ jobs:
         if: runner.os != 'Windows'
         uses: cachix/install-nix-action@v31
 
+      - name: Setup static nix cache snapshot
+        if: runner.os != 'Windows'
+        uses: randymarsh77/static-nix-cache/setup@v1
+
       - name: Build release binary
         id: nix-build
         if: runner.os != 'Windows'
@@ -175,10 +179,9 @@ jobs:
           path: ${{ matrix.archive }}
 
       - name: Cache Nix Binaries
-        uses: randymarsh77/OpenCache/save@v1
+        uses: randymarsh77/static-nix-cache/save@v1
         if: runner.os != 'Windows'
         with:
-          paths: ${{ steps.nix-build.outputs.store-paths }}
           name: ${{ matrix.os }}
           signing-key: ${{ secrets.NIX_SIGNING_KEY }}
 
@@ -242,13 +245,8 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
 
-      - uses: randymarsh77/OpenCache/restore@v1
-        id: restore
-
-      - uses: randymarsh77/OpenCache/deploy@v1
+      - uses: randymarsh77/static-nix-cache/deploy@v1
         with:
-          paths-file: ${{ steps.restore.outputs.paths-file }}
-          export-dir: ${{ steps.restore.outputs.export-dir }}
           backend: github-releases
           github-token: ${{ secrets.GITHUB_TOKEN }}
           static: ./nix-cache-static
