@@ -58,9 +58,3 @@ jobs:
           git add version.txt
           git commit -m "chore: release v${{ steps.bump.outputs.version }}"
           git push origin HEAD:master
-
-      - name: Publish
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.bump.outputs.version }}
-          name: v${{ steps.bump.outputs.version }}
