@@ -56,5 +56,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add version.txt
-          git commit -m "Publish"
+          git commit -m "Publish v${{ steps.bump.outputs.version }}"
           git push origin HEAD:master
