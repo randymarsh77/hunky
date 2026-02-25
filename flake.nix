@@ -18,7 +18,7 @@
     };
     flake-utils.url = "github:numtide/flake-utils";
     opencache = {
-      url = "github:randymarsh77/OpenCache";
+      url = "github:randymarsh77/static-nix-cache";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
