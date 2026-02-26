@@ -99,6 +99,52 @@ pub struct App {
 }
 
 impl App {
+    /// Toggle file-level staging and return whether snapshot refresh is needed.
+    fn toggle_file_staging_for_change(git_repo: &GitRepo, file: &mut FileChange) -> bool {
+        let any_staged = file.hunks.iter().any(|h| h.staged);
+        if any_staged {
+            match git_repo.unstage_file(&file.path) {
+                Ok(_) => {
+                    for hunk in &mut file.hunks {
+                        hunk.staged = false;
+                        hunk.staged_line_indices.clear();
+                    }
+                    debug_log(format!("Unstaged file {}", file.path.display()));
+                    true
+                }
+                Err(e) => {
+                    debug_log(format!("Failed to unstage file: {}", e));
+                    false
+                }
+            }
+        } else {
+            match git_repo.stage_file(&file.path) {
+                Ok(_) => {
+                    for hunk in &mut file.hunks {
+                        hunk.staged = true;
+                        hunk.staged_line_indices.clear();
+                        for (idx, line) in hunk.lines.iter().enumerate() {
+                            if Self::is_diff_change_line(line) {
+                                hunk.staged_line_indices.insert(idx);
+                            }
+                        }
+                    }
+                    debug_log(format!("Staged file {}", file.path.display()));
+                    true
+                }
+                Err(e) => {
+                    debug_log(format!("Failed to stage file: {}", e));
+                    false
+                }
+            }
+        }
+    }
+
+    fn is_diff_change_line(line: &str) -> bool {
+        (line.starts_with('+') && !line.starts_with("+++"))
+            || (line.starts_with('-') && !line.starts_with("---"))
+    }
+
     pub async fn new(repo_path: &str) -> Result<Self> {
         let git_repo = GitRepo::new(repo_path)?;
 
@@ -922,7 +968,11 @@ impl App {
                     // Stage/unstage a single line
                     if let Some(snapshot) = self.snapshots.get_mut(self.current_snapshot_index) {
                         if let Some(file) = snapshot.files.get_mut(self.current_file_index) {
-                            if let Some(hunk) = file.hunks.get_mut(self.current_hunk_index) {
+                            if matches!(file.status.as_str(), "Added" | "Deleted") {
+                                refresh_needed =
+                                    Self::toggle_file_staging_for_change(&self.git_repo, file)
+                                        || refresh_needed;
+                            } else if let Some(hunk) = file.hunks.get_mut(self.current_hunk_index) {
                                 // Get the selected line
                                 if let Some(selected_line) =
                                     hunk.lines.get(self.selected_line_index)
@@ -992,7 +1042,11 @@ impl App {
                     // Toggle staging for the current hunk
                     if let Some(snapshot) = self.snapshots.get_mut(self.current_snapshot_index) {
                         if let Some(file) = snapshot.files.get_mut(self.current_file_index) {
-                            if let Some(hunk) = file.hunks.get_mut(self.current_hunk_index) {
+                            if matches!(file.status.as_str(), "Added" | "Deleted") {
+                                refresh_needed =
+                                    Self::toggle_file_staging_for_change(&self.git_repo, file)
+                                        || refresh_needed;
+                            } else if let Some(hunk) = file.hunks.get_mut(self.current_hunk_index) {
                                 match self.git_repo.toggle_hunk_staging(hunk, &file.path) {
                                     Ok(is_staged_now) => {
                                         if is_staged_now {

@@ -122,6 +122,39 @@ fn stage_and_unstage_file_updates_index() {
 }
 
 #[test]
+fn stage_and_unstage_added_and_deleted_files_updates_index() {
+    let repo = TestRepo::new();
+    repo.write_file("tracked.txt", "tracked\n");
+    repo.commit_all("initial");
+
+    repo.write_file("added.txt", "new file\n");
+    fs::remove_file(repo.path.join("tracked.txt")).expect("failed to remove tracked file");
+
+    let git_repo = GitRepo::new(&repo.path).expect("failed to open test repo");
+
+    git_repo
+        .stage_file(Path::new("added.txt"))
+        .expect("failed to stage added file");
+    git_repo
+        .stage_file(Path::new("tracked.txt"))
+        .expect("failed to stage deleted file");
+
+    let staged = run_git(&repo.path, &["diff", "--cached", "--name-status"]);
+    assert!(staged.contains("A\tadded.txt"));
+    assert!(staged.contains("D\ttracked.txt"));
+
+    git_repo
+        .unstage_file(Path::new("added.txt"))
+        .expect("failed to unstage added file");
+    git_repo
+        .unstage_file(Path::new("tracked.txt"))
+        .expect("failed to unstage deleted file");
+
+    let staged_after = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
+    assert!(staged_after.trim().is_empty());
+}
+
+#[test]
 fn stage_and_unstage_hunk_updates_index() {
     let repo = TestRepo::new();
     repo.write_file("example.txt", "line 1\nline 2\nline 3\n");
