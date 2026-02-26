@@ -320,10 +320,10 @@ async fn navigation_and_scroll_helpers_cover_core_branches() {
     assert_eq!(app.scroll_offset, 0);
     app.help_scroll_offset = 50;
     app.clamp_help_scroll_offset(10);
-    assert_eq!(app.help_scroll_offset, 22);
+    assert_eq!(app.help_scroll_offset, 23);
     app.extended_help_scroll_offset = 500;
     app.clamp_extended_help_scroll_offset(20);
-    assert_eq!(app.extended_help_scroll_offset, 88);
+    assert_eq!(app.extended_help_scroll_offset, 96);
 }
 
 #[tokio::test]
@@ -1076,4 +1076,35 @@ async fn review_mode_advance_hunk_wraps() {
     }
     // Should have wrapped back
     assert!(app.current_file_index < file_count);
+}
+
+#[tokio::test]
+async fn copy_current_to_clipboard_sets_status_message() {
+    let repo = TestRepo::new();
+    let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+        .await
+        .expect("failed to create app");
+    app.snapshots = vec![sample_snapshot()];
+    app.current_snapshot_index = 0;
+    app.current_file_index = 0;
+    app.current_hunk_index = 0;
+    app.focus = FocusPane::HunkView;
+
+    // In normal mode, copy hunk
+    app.line_selection_mode = false;
+    app.copy_current_to_clipboard();
+    assert_eq!(
+        app.status_message.as_deref(),
+        Some("Copied hunk to clipboard")
+    );
+    assert!(app.status_message_time.is_some());
+
+    // In line selection mode, copy line
+    app.line_selection_mode = true;
+    app.selected_line_index = 0; // "-old\n"
+    app.copy_current_to_clipboard();
+    assert_eq!(
+        app.status_message.as_deref(),
+        Some("Copied line to clipboard")
+    );
 }

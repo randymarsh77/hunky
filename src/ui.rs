@@ -131,6 +131,15 @@ impl<'a> UI<'a> {
         }
         title_left.push(Span::styled(mode_text, Style::default().fg(Color::Yellow)));
 
+        // Show status message if present
+        if let Some(msg) = self.app.status_message() {
+            title_left.push(Span::raw(" | "));
+            title_left.push(Span::styled(
+                msg,
+                Style::default().fg(Color::Green),
+            ));
+        }
+
         // Calculate padding to right-align help hint
         let left_width = title_left.iter().map(|s| s.content.len()).sum::<usize>();
         let padding_width = available_width.saturating_sub(left_width + help_width);
@@ -698,6 +707,7 @@ impl<'a> UI<'a> {
                     .add_modifier(Modifier::BOLD),
             )),
             Line::from("C: Commit (Open Editor)"),
+            Line::from("Ctrl+Y: Copy to Clipboard"),
             Line::from("ESC: Reset to Defaults"),
         ];
 
@@ -900,6 +910,19 @@ impl<'a> UI<'a> {
             Line::from(""),
             Line::from("When switching to Streaming mode, Hunky captures the current state and"),
             Line::from("will only show new hunks that appear after the switch."),
+            Line::from(""),
+            Line::from(Span::styled(
+                "CLIPBOARD",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from("  Ctrl+Y          Copy to system clipboard (via OSC 52)"),
+            Line::from(""),
+            Line::from("  In normal mode, copies the entire current hunk."),
+            Line::from("  In Line Mode (L), copies only the selected line."),
+            Line::from("  Line content is copied without the diff prefix (+/-/ )."),
             Line::from(""),
             Line::from(Span::styled(
                 "RESET TO DEFAULTS",
