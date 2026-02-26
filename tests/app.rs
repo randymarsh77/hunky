@@ -472,6 +472,52 @@ async fn stage_current_selection_handles_line_hunk_and_file_modes() {
 }
 
 #[tokio::test]
+async fn stage_current_selection_toggles_added_and_deleted_files_in_hunk_view() {
+    let repo = TestRepo::new();
+    repo.write_file("tracked.txt", "tracked\n");
+    repo.commit_all("initial");
+    repo.write_file("added.txt", "new file\n");
+    run_git(&repo.path, &["add", "-N", "added.txt"]);
+    std::fs::remove_file(repo.path.join("tracked.txt")).expect("failed to remove tracked file");
+
+    let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+        .await
+        .expect("failed to create app");
+    app.current_snapshot_index = 0;
+    app.focus = FocusPane::HunkView;
+    app.line_selection_mode = true;
+
+    let added_index = app.snapshots[0]
+        .files
+        .iter()
+        .position(|file| file.path == PathBuf::from("added.txt"))
+        .expect("expected added file in diff");
+    app.current_file_index = added_index;
+    app.current_hunk_index = 0;
+    app.stage_current_selection();
+    let staged_added = run_git(&repo.path, &["diff", "--cached", "--name-status"]);
+    assert!(staged_added.contains("A\tadded.txt"));
+    app.stage_current_selection();
+    let staged_added_after_unstage = run_git(&repo.path, &["diff", "--cached", "--name-status"]);
+    assert!(!staged_added_after_unstage.contains("A\tadded.txt"));
+
+    let deleted_index = app.snapshots[0]
+        .files
+        .iter()
+        .position(|file| file.path == PathBuf::from("tracked.txt"))
+        .expect("expected deleted file in diff");
+    app.current_file_index = deleted_index;
+    app.current_hunk_index = 0;
+    app.stage_current_selection();
+    let staged_deleted = run_git(&repo.path, &["diff", "--cached", "--name-status"]);
+    assert!(staged_deleted.contains("D\ttracked.txt"));
+    app.stage_current_selection();
+
+    let staged_after = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
+    assert!(staged_after.trim().is_empty());
+}
+
+#[tokio::test]
 #[ignore = "Known flaky hunk restage path; run explicitly during debugging"]
 async fn hunk_toggle_can_restage_after_unstage_on_simple_file() {
     let repo = TestRepo::new();
