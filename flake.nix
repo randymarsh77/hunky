@@ -36,7 +36,10 @@
           pname = "hunky";
           version = "0.1.0";
           src = ./.;
-          cargoLock.lockFile = ./Cargo.lock;
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+            outputHashes."tui2web-0.1.0" = "sha256-Jo36WmbjZFcWD4X+HOwvj4YAh87D6WHQSDphIvVFXNM=";
+          };
           nativeBuildInputs = with pkgs; [ pkg-config ];
           nativeCheckInputs = with pkgs; [ git ];
           buildInputs = with pkgs; [ openssl ];
