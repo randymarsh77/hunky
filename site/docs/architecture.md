@@ -68,29 +68,34 @@ platform boundaries with tui2web's in-memory repository and Worker host.
 Every instance starts with an independent HEAD, index, working tree and two
 simulated history entries. The fixture contains staged and unstaged changes,
 an untracked file, a deletion and multiple separated hunks. Staging changes the
-index, never the working tree. The editor changes the working tree, never the
-index. Index-only hunks expose staged changes that subsequent working-tree edits
+index, never the working tree. Internal edit commands change the working tree,
+never the index. Index-only hunks expose staged changes that subsequent working-tree edits
 have removed. Hunky keeps the same hunk/line/file toggle navigation; history
 review still uses the actual commit picker and acceptance UI.
 
 This is an explicitly labeled text-only Git simulation, not an implementation
 of Git's object database. There are no branches, remotes, credentials,
-subprocesses, visitor repository access or external editors. The Commit button
-records only the simulated index in local history. Unsupported commands and
+subprocesses, visitor repository access or external editors. Internal commit commands
+record only the simulated index in local history. Unsupported commands and
 invalid edits show errors instead of reporting success.
 
-The original hero screenshot is replaced in place by the interactive terminal
-inside CSS-rendered macOS window chrome. Its traffic lights are decorative,
-not controls. Restart is always visible; editing, navigation buttons and the
-repository inspector live in an expandable panel beneath the terminal.
+The original hero screenshot and its dimensions remain unchanged, with a centered
+translucent **Try it live** button. No runtime, Worker, frame, application module
+or WASM is fetched or instantiated until that button is activated. A reduced-motion
+aware loading shimmer replaces the image, then the real terminal occupies its
+original screen region with decorative CSS chrome and no layout shift.
 
-The landing page loads self-hosted assets under `/playground/`, then mounts
+After activation, the page loads self-hosted assets under `/playground/`, then mounts
 an opaque-origin iframe (`sandbox="allow-scripts"`) through
 `@tui2web/runtime`. Its prebuilt WASM runs in a bounded Worker with a
 network-denying CSP. The parent provisions only the selected bundled assets.
 No app code is compiled in the browser. There is no persistence: restart/reset
 creates the original fixture, including HEAD/index/history, and unmount disposes
-the Worker and iframe. The inspector reads a complete repository snapshot.
+the Worker and iframe. Quitting with `Q` shows "Hunky exited. Restart to try again."
+with a keyboard-accessible Restart link; failures provide a concise Retry link.
+There are no public guide, editor, inspector or staging controls outside the TUI.
+Semantic browser tests use an independent test-only runtime harness to inspect
+complete repository snapshots without adding production UI or polling.
 
 Build with `nix develop --command npm --prefix landing ci` followed by
 `nix develop --command npm --prefix landing run build`. The locked Nix shell

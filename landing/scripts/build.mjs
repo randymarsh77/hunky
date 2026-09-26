@@ -7,7 +7,7 @@ const landing = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const root = resolve(landing, '..');
 const output = join(landing, 'dist', 'playground');
 await mkdir(output, {recursive: true});
-for (const file of ['index.html', 'playground.js', 'playground.css']) {
+for (const file of ['index.html', 'terminal.png', 'playground.js', 'playground.css']) {
   await copyFile(join(landing, file), join(landing, 'dist', file));
 }
 execFileSync('cargo', ['build', '--locked', '--release', '--lib', '--no-default-features', '--features', 'browser', '--target', 'wasm32-unknown-unknown'], {cwd: root, stdio: 'inherit'});
