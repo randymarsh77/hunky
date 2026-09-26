@@ -168,7 +168,6 @@ jobs:
 
       - name: Setup static nix cache snapshot
         if: runner.os != 'Windows'
-        # Keep all three actions on the same major version for their shared artifact format.
         uses: randymarsh77/static-nix-cache/setup@v1
 
       - name: Build release binary
