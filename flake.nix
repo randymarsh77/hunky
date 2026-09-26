@@ -30,12 +30,16 @@
         pkgs = import nixpkgs { inherit system overlays; };
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
           extensions = [ "rust-src" "rust-analyzer" ];
+          targets = [ "wasm32-unknown-unknown" ];
         };
         hunkyPackage = pkgs.rustPlatform.buildRustPackage {
           pname = "hunky";
           version = "0.1.0";
           src = ./.;
-          cargoLock.lockFile = ./Cargo.lock;
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+            outputHashes."tui2web-0.1.0" = "sha256-Jo36WmbjZFcWD4X+HOwvj4YAh87D6WHQSDphIvVFXNM=";
+          };
           nativeBuildInputs = with pkgs; [ pkg-config ];
           nativeCheckInputs = with pkgs; [ git ];
           buildInputs = with pkgs; [ openssl ];
@@ -63,6 +67,8 @@
             pkg-config
             openssl
             git
+            wasm-bindgen-cli
+            nodejs
           ];
 
           RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";

@@ -1,14 +1,6 @@
-mod app;
-mod diff;
-mod git;
-mod logger;
-mod syntax;
-mod ui;
-mod watcher;
-
 use anyhow::Result;
-use app::App;
 use clap::Parser;
+use hunky::{app::App, logger};
 
 #[derive(Parser, Debug)]
 #[command(name = "hunky")]

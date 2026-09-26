@@ -83,6 +83,8 @@ impl Hunk {
 /// Unique identifier for a hunk based on file path, line numbers, and content hash
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HunkId {
+    #[cfg(feature = "browser")]
+    pub index_only: bool,
     pub file_path: PathBuf,
     pub old_start: usize,
     pub new_start: usize,
@@ -100,6 +102,8 @@ impl HunkId {
         let content_hash = hasher.finish();
 
         Self {
+            #[cfg(feature = "browser")]
+            index_only: false,
             file_path: file_path.to_path_buf(),
             old_start,
             new_start,
