@@ -1,0 +1,14 @@
+.playground { margin-bottom: 4rem; }
+.toolbar { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0; }
+.playground button { padding: .5rem .75rem; cursor: pointer; border: 1px solid var(--ifm-color-emphasis-400); border-radius: .3rem; }
+.playground button:disabled { cursor: not-allowed; opacity: .5; }
+.terminal { height: 540px; width: 100%; background: #141821; border: 1px solid #4d596c; border-radius: .4rem; overflow: hidden; }
+.hint { margin-top: 1rem; }
+.inspector { border: 1px solid var(--ifm-color-emphasis-300); border-radius: .4rem; padding: 1rem; }
+.inspector summary { cursor: pointer; font-weight: bold; margin-bottom: 1rem; }
+.inspector label { display: block; margin-top: 1rem; }
+.inspector input, .inspector textarea { display: block; width: 100%; padding: .6rem; margin: .4rem 0; }
+.inspector textarea, .diffs pre { font-family: var(--ifm-font-family-monospace); }
+.diffs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; margin-top: 1rem; }
+.diffs pre { max-height: 24rem; white-space: pre; overflow: auto; }
+@media (max-width: 700px) { .diffs { grid-template-columns: minmax(0, 1fr); } .terminal { height: 430px; } }

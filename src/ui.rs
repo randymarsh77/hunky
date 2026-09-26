@@ -416,6 +416,12 @@ impl<'a> UI<'a> {
             Style::default().fg(Color::Cyan)
         };
 
+        #[cfg(feature = "browser")]
+        let hunk_header = if hunk.id.index_only {
+            format!("{hunk_header} [INDEX ONLY - absent from working tree]")
+        } else {
+            hunk_header
+        };
         lines.push(Line::from(Span::styled(hunk_header, header_style)));
         lines.push(Line::from("")); // Empty line for spacing
 
@@ -968,6 +974,6 @@ impl<'a> UI<'a> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "browser")))]
 #[path = "../tests/ui.rs"]
 mod tests;

@@ -20,6 +20,9 @@ site/node_modules/
 site/build/
 site/.docusaurus/
 site/.cache-loader/
+site/static/playground/
+site/playwright-report/
+site/test-results/
 
 # Secrets
 *.pem

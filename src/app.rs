@@ -1,21 +1,30 @@
 use anyhow::Result;
+#[cfg(not(feature = "browser"))]
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+#[cfg(not(feature = "browser"))]
 use ratatui::{
     backend::{Backend, CrosstermBackend},
     Terminal,
 };
 use std::collections::HashMap;
-use std::io::{self};
-use std::time::{Duration, Instant};
+#[cfg(not(feature = "browser"))]
+use std::io;
+use std::time::Duration;
+#[cfg(not(feature = "browser"))]
+use std::time::Instant;
+#[cfg(not(feature = "browser"))]
 use tokio::sync::mpsc;
 
 use crate::diff::{CommitInfo, DiffSnapshot, FileChange};
 use crate::git::GitRepo;
+use crate::input::{KeyCode, KeyEvent, KeyModifiers};
+#[cfg(not(feature = "browser"))]
 use crate::ui::UI;
+#[cfg(not(feature = "browser"))]
 use crate::watcher::FileWatcher;
 
 // Debug logging helper
@@ -78,7 +87,9 @@ pub struct App {
     selected_line_index: usize,
     // Track last selected line per hunk (file_index, hunk_index) -> line_index
     hunk_line_memory: HashMap<(usize, usize), usize>,
+    #[cfg(not(feature = "browser"))]
     snapshot_receiver: mpsc::UnboundedReceiver<DiffSnapshot>,
+    #[cfg(not(feature = "browser"))]
     last_auto_advance: Instant,
     scroll_offset: u16,
     help_scroll_offset: u16,
@@ -89,7 +100,9 @@ pub struct App {
     // Cached viewport heights to prevent scroll flashing
     last_diff_viewport_height: u16,
     last_help_viewport_height: u16,
+    #[cfg(not(feature = "browser"))]
     needs_full_redraw: bool,
+    #[cfg(not(feature = "browser"))]
     _watcher: FileWatcher,
     // Review mode state
     review_commits: Vec<CommitInfo>,
@@ -99,9 +112,19 @@ pub struct App {
 }
 
 impl App {
+    #[cfg(not(feature = "browser"))]
     pub async fn new(repo_path: &str) -> Result<Self> {
         let git_repo = GitRepo::new(repo_path)?;
+        let (tx, rx) = mpsc::unbounded_channel();
+        let watcher = FileWatcher::new(git_repo.clone(), tx)?;
+        Self::with_repository(git_repo, rx, watcher)
+    }
 
+    pub fn with_repository(
+        git_repo: GitRepo,
+        #[cfg(not(feature = "browser"))] rx: mpsc::UnboundedReceiver<DiffSnapshot>,
+        #[cfg(not(feature = "browser"))] watcher: FileWatcher,
+    ) -> Result<Self> {
         // Get initial snapshot
         let mut initial_snapshot = git_repo.get_diff_snapshot()?;
 
@@ -128,10 +151,6 @@ impl App {
             }
         }
 
-        // Set up file watcher
-        let (tx, rx) = mpsc::unbounded_channel();
-        let watcher = FileWatcher::new(git_repo.clone(), tx)?;
-
         let app = Self {
             git_repo,
             snapshots: vec![initial_snapshot],
@@ -147,7 +166,9 @@ impl App {
             line_selection_mode: false,
             selected_line_index: 0,
             hunk_line_memory: HashMap::new(),
+            #[cfg(not(feature = "browser"))]
             snapshot_receiver: rx,
+            #[cfg(not(feature = "browser"))]
             last_auto_advance: Instant::now(),
             scroll_offset: 0,
             help_scroll_offset: 0,
@@ -156,7 +177,9 @@ impl App {
             extended_help_scroll_offset: 0,
             last_diff_viewport_height: 20, // Reasonable default
             last_help_viewport_height: 20, // Reasonable default
+            #[cfg(not(feature = "browser"))]
             needs_full_redraw: true,
+            #[cfg(not(feature = "browser"))]
             _watcher: watcher,
             review_commits: Vec::new(),
             review_commit_cursor: 0,
@@ -167,6 +190,7 @@ impl App {
         Ok(app)
     }
 
+    #[cfg(not(feature = "browser"))]
     pub async fn run(&mut self) -> Result<()> {
         // Setup terminal
         enable_raw_mode()?;
@@ -189,81 +213,12 @@ impl App {
         result
     }
 
+    #[cfg(not(feature = "browser"))]
     async fn run_loop<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
         loop {
             // Check for new snapshots
-            while let Ok(mut snapshot) = self.snapshot_receiver.try_recv() {
-                debug_log(format!(
-                    "Received snapshot with {} files",
-                    snapshot.files.len()
-                ));
-
-                // Detect staged lines for all hunks
-                for file in &mut snapshot.files {
-                    for hunk in &mut file.hunks {
-                        // Detect which lines are actually staged in git's index
-                        match self.git_repo.detect_staged_lines(hunk, &file.path) {
-                            Ok(staged_indices) => {
-                                hunk.staged_line_indices = staged_indices;
-
-                                // Check if all change lines are staged
-                                let total_change_lines = hunk
-                                    .lines
-                                    .iter()
-                                    .filter(|line| {
-                                        (line.starts_with('+') && !line.starts_with("+++"))
-                                            || (line.starts_with('-') && !line.starts_with("---"))
-                                    })
-                                    .count();
-
-                                hunk.staged = hunk.staged_line_indices.len() == total_change_lines
-                                    && total_change_lines > 0;
-
-                                if !hunk.staged_line_indices.is_empty() {
-                                    debug_log(format!("Detected {} staged lines in hunk (total: {}, fully staged: {})", 
-                                        hunk.staged_line_indices.len(), total_change_lines, hunk.staged));
-                                }
-                            }
-                            Err(e) => {
-                                debug_log(format!("Failed to detect staged lines: {}", e));
-                            }
-                        }
-                    }
-                }
-
-                match self.mode {
-                    Mode::View => {
-                        // In View mode, update the current snapshot with new staged line info
-                        // Replace the current snapshot entirely with the new one
-                        if !self.snapshots.is_empty() {
-                            self.snapshots[self.current_snapshot_index] = snapshot;
-                            debug_log("Updated current snapshot in View mode".to_string());
-                        }
-                    }
-                    Mode::Review => {
-                        // In Review mode, ignore live snapshot updates (reviewing a commit)
-                        debug_log("Ignoring snapshot update in Review mode".to_string());
-                    }
-                    Mode::Streaming(_) => {
-                        // In Streaming mode, only add snapshots that arrived after we entered streaming
-                        // These are "new" changes to stream
-                        self.snapshots.push(snapshot);
-                        debug_log(format!(
-                            "Added new snapshot in Streaming mode. Total snapshots: {}",
-                            self.snapshots.len()
-                        ));
-
-                        // If we're on an empty/old snapshot, advance to the new one
-                        if let Some(start_idx) = self.streaming_start_snapshot {
-                            if self.current_snapshot_index <= start_idx {
-                                self.current_snapshot_index = self.snapshots.len() - 1;
-                                self.current_file_index = 0;
-                                self.current_hunk_index = 0;
-                                debug_log("Advanced to new snapshot in Streaming mode".to_string());
-                            }
-                        }
-                    }
-                }
+            while let Ok(snapshot) = self.snapshot_receiver.try_recv() {
+                self.ingest_snapshot(snapshot);
             }
 
             // Auto-advance in Streaming Auto mode
@@ -312,253 +267,274 @@ impl App {
             // Handle input (non-blocking)
             if event::poll(Duration::from_millis(50))? {
                 if let Event::Key(key) = event::read()? {
-                    // If the commit picker overlay is active, handle its keys first
-                    if self.review_selecting_commit {
-                        match key.code {
-                            KeyCode::Char('q') | KeyCode::Char('Q') => break,
-                            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                break
-                            }
-                            KeyCode::Char('j') | KeyCode::Down => {
-                                if !self.review_commits.is_empty()
-                                    && self.review_commit_cursor + 1 < self.review_commits.len()
-                                {
-                                    self.review_commit_cursor += 1;
-                                }
-                            }
-                            KeyCode::Char('k') | KeyCode::Up => {
-                                self.review_commit_cursor =
-                                    self.review_commit_cursor.saturating_sub(1);
-                            }
-                            KeyCode::Enter => {
-                                self.select_review_commit();
-                            }
-                            KeyCode::Esc => {
-                                // Cancel commit selection, go back to View mode
-                                self.review_selecting_commit = false;
-                                self.review_commits.clear();
-                                self.mode = Mode::View;
-                                debug_log("Cancelled review commit selection".to_string());
-                            }
-                            _ => {}
-                        }
-                        continue;
-                    }
-
-                    match key.code {
-                        KeyCode::Char('q') | KeyCode::Char('Q') => break,
-                        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            break
-                        }
-                        KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                            // Shift+Space goes to previous hunk (works in View, Streaming Buffered, and Review)
-                            debug_log(format!("Shift+Space pressed, mode: {:?}", self.mode));
-                            match self.mode {
-                                Mode::View | Mode::Review => {
-                                    self.previous_hunk();
-                                }
-                                Mode::Streaming(StreamingType::Buffered) => {
-                                    // In buffered mode, allow going back if there's a previous hunk
-                                    self.previous_hunk();
-                                }
-                                Mode::Streaming(StreamingType::Auto(_)) => {
-                                    // Auto mode doesn't support going back
-                                    debug_log("Auto mode - ignoring Shift+Space".to_string());
-                                }
-                            }
-                        }
-                        KeyCode::Char('r') | KeyCode::Char('R') => {
-                            if self.mode != Mode::Review {
-                                self.enter_review_mode();
-                            }
-                        }
-                        KeyCode::Char('c') => {
-                            if self.mode != Mode::Review {
-                                if let Err(e) = self.open_commit_mode() {
-                                    debug_log(format!("Failed to open commit mode: {}", e));
-                                }
-                            }
-                        }
-                        KeyCode::Char('m') => {
-                            if self.mode != Mode::Review {
-                                self.cycle_mode();
-                            }
-                        }
-                        KeyCode::Char(' ') => {
-                            // Advance to next hunk
-                            self.advance_hunk();
-                        }
-                        KeyCode::Char('b') | KeyCode::Char('B') => {
-                            // 'b' for back - alternative to Shift+Space
-                            debug_log("B key pressed (back)".to_string());
-                            match self.mode {
-                                Mode::View | Mode::Review => {
-                                    self.previous_hunk();
-                                }
-                                Mode::Streaming(StreamingType::Buffered) => {
-                                    self.previous_hunk();
-                                }
-                                Mode::Streaming(StreamingType::Auto(_)) => {
-                                    debug_log("Auto mode - ignoring back".to_string());
-                                }
-                            }
-                        }
-                        KeyCode::Tab => self.cycle_focus_forward(),
-                        KeyCode::BackTab => self.cycle_focus_backward(),
-                        KeyCode::Char('j') | KeyCode::Down => {
-                            if self.show_extended_help {
-                                // Scroll down in extended help - pre-clamp to prevent flashing
-                                let content_height = self.extended_help_content_height() as u16;
-                                let viewport_height = self.last_help_viewport_height;
-                                if content_height > viewport_height {
-                                    let max_scroll = content_height.saturating_sub(viewport_height);
-                                    if self.extended_help_scroll_offset < max_scroll {
-                                        self.extended_help_scroll_offset =
-                                            self.extended_help_scroll_offset.saturating_add(1);
-                                    }
-                                }
-                            } else {
-                                match self.focus {
-                                    FocusPane::FileList => {
-                                        // Navigate to next file and jump to its first hunk
-                                        self.next_file();
-                                        self.scroll_offset = 0;
-                                    }
-                                    FocusPane::HunkView => {
-                                        if self.line_selection_mode {
-                                            // Navigate to next change line
-                                            self.next_change_line();
-                                        } else {
-                                            // Scroll down in hunk view - pre-clamp to prevent flashing
-                                            let content_height =
-                                                self.current_hunk_content_height() as u16;
-                                            let viewport_height = self.last_diff_viewport_height;
-                                            if content_height > viewport_height {
-                                                let max_scroll =
-                                                    content_height.saturating_sub(viewport_height);
-                                                if self.scroll_offset < max_scroll {
-                                                    self.scroll_offset =
-                                                        self.scroll_offset.saturating_add(1);
-                                                }
-                                            }
-                                        }
-                                    }
-                                    FocusPane::HelpSidebar => {
-                                        // Scroll down in help sidebar - pre-clamp to prevent flashing
-                                        let content_height = self.help_content_height() as u16;
-                                        let viewport_height = self.last_help_viewport_height;
-                                        if content_height > viewport_height {
-                                            let max_scroll =
-                                                content_height.saturating_sub(viewport_height);
-                                            if self.help_scroll_offset < max_scroll {
-                                                self.help_scroll_offset =
-                                                    self.help_scroll_offset.saturating_add(1);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        KeyCode::Char('k') | KeyCode::Up => {
-                            if self.show_extended_help {
-                                // Scroll up in extended help
-                                self.extended_help_scroll_offset =
-                                    self.extended_help_scroll_offset.saturating_sub(1);
-                            } else {
-                                match self.focus {
-                                    FocusPane::FileList => {
-                                        // Navigate to previous file and jump to its first hunk
-                                        self.previous_file();
-                                        self.scroll_offset = 0;
-                                    }
-                                    FocusPane::HunkView => {
-                                        if self.line_selection_mode {
-                                            // Navigate to previous change line
-                                            self.previous_change_line();
-                                        } else {
-                                            // Scroll up in hunk view
-                                            self.scroll_offset =
-                                                self.scroll_offset.saturating_sub(1);
-                                        }
-                                    }
-                                    FocusPane::HelpSidebar => {
-                                        // Scroll up in help sidebar
-                                        self.help_scroll_offset =
-                                            self.help_scroll_offset.saturating_sub(1);
-                                    }
-                                }
-                            }
-                        }
-                        KeyCode::Char('n') => {
-                            // Next file
-                            self.next_file();
-                            self.scroll_offset = 0;
-                        }
-                        KeyCode::Char('p') => {
-                            // Previous file
-                            self.previous_file();
-                            self.scroll_offset = 0;
-                        }
-                        KeyCode::Char('f') => {
-                            // Toggle filenames only
-                            self.show_filenames_only = !self.show_filenames_only;
-                        }
-                        KeyCode::Char('s') | KeyCode::Char('S') => {
-                            if self.mode == Mode::Review {
-                                // In review mode, toggle acceptance of the current hunk (in-memory)
-                                self.toggle_review_acceptance();
-                            } else {
-                                // Stage/unstage current selection (smart toggle)
-                                self.stage_current_selection();
-                            }
-                        }
-                        KeyCode::Char('w') => {
-                            // Toggle line wrapping
-                            self.wrap_lines = !self.wrap_lines;
-                        }
-                        KeyCode::Char('y') => {
-                            // Toggle syntax highlighting
-                            self.syntax_highlighting = !self.syntax_highlighting;
-                        }
-                        KeyCode::Char('l') | KeyCode::Char('L') => {
-                            self.toggle_line_selection_mode()
-                        }
-                        KeyCode::Char('h') => {
-                            // Toggle help sidebar
-                            self.show_help = !self.show_help;
-                            self.help_scroll_offset = 0;
-                            // If hiding help and focus was on help sidebar, move focus to hunk view
-                            if !self.show_help && self.focus == FocusPane::HelpSidebar {
-                                self.focus = FocusPane::HunkView;
-                            }
-                        }
-                        KeyCode::Char('H') => {
-                            // Toggle extended help view
-                            self.show_extended_help = !self.show_extended_help;
-                            self.extended_help_scroll_offset = 0;
-                        }
-                        KeyCode::Esc => {
-                            if self.mode == Mode::Review {
-                                // Exit review mode, go back to View
-                                self.exit_review_mode();
-                            } else {
-                                // Reset to defaults
-                                self.show_extended_help = false;
-                                self.extended_help_scroll_offset = 0;
-                                self.mode = Mode::View;
-                                self.line_selection_mode = false;
-                                self.focus = FocusPane::HunkView;
-                                self.show_help = false;
-                                self.help_scroll_offset = 0;
-                            }
-                        }
-                        _ => {}
+                    if self.handle_key(key) {
+                        break;
                     }
                 }
             }
         }
-
         Ok(())
+    }
+
+    /// Receive a native watcher event or a browser working-tree edit.
+    pub fn ingest_snapshot(&mut self, mut snapshot: DiffSnapshot) {
+        self.annotate_staged_lines(&mut snapshot);
+        match self.mode {
+            Mode::View => {
+                if !self.snapshots.is_empty() {
+                    self.snapshots[self.current_snapshot_index] = snapshot;
+                }
+            }
+            Mode::Review => {}
+            Mode::Streaming(_) => {
+                self.snapshots.push(snapshot);
+                if let Some(start) = self.streaming_start_snapshot {
+                    if self.current_snapshot_index <= start {
+                        self.current_snapshot_index = self.snapshots.len() - 1;
+                        self.current_file_index = 0;
+                        self.current_hunk_index = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Shared input state machine; returns true when the user requests exit.
+    pub fn handle_key(&mut self, key: KeyEvent) -> bool {
+        // If the commit picker overlay is active, handle its keys first
+        if self.review_selecting_commit {
+            match key.code {
+                KeyCode::Char('q') | KeyCode::Char('Q') => return true,
+                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    return true;
+                }
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if !self.review_commits.is_empty()
+                        && self.review_commit_cursor + 1 < self.review_commits.len()
+                    {
+                        self.review_commit_cursor += 1;
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    self.review_commit_cursor = self.review_commit_cursor.saturating_sub(1);
+                }
+                KeyCode::Enter => {
+                    self.select_review_commit();
+                }
+                KeyCode::Esc => {
+                    // Cancel commit selection, go back to View mode
+                    self.review_selecting_commit = false;
+                    self.review_commits.clear();
+                    self.mode = Mode::View;
+                    debug_log("Cancelled review commit selection".to_string());
+                }
+                _ => {}
+            }
+            return false;
+        }
+
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Char('Q') => return true,
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                return true;
+            }
+            KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                // Shift+Space goes to previous hunk (works in View, Streaming Buffered, and Review)
+                debug_log(format!("Shift+Space pressed, mode: {:?}", self.mode));
+                match self.mode {
+                    Mode::View | Mode::Review => {
+                        self.previous_hunk();
+                    }
+                    Mode::Streaming(StreamingType::Buffered) => {
+                        // In buffered mode, allow going back if there's a previous hunk
+                        self.previous_hunk();
+                    }
+                    Mode::Streaming(StreamingType::Auto(_)) => {
+                        // Auto mode doesn't support going back
+                        debug_log("Auto mode - ignoring Shift+Space".to_string());
+                    }
+                }
+            }
+            KeyCode::Char('r') | KeyCode::Char('R') => {
+                if self.mode != Mode::Review {
+                    self.enter_review_mode();
+                }
+            }
+            KeyCode::Char('c') => {
+                if self.mode != Mode::Review {
+                    if let Err(e) = self.open_commit_mode() {
+                        debug_log(format!("Failed to open commit mode: {}", e));
+                    }
+                }
+            }
+            KeyCode::Char('m') => {
+                if self.mode != Mode::Review {
+                    self.cycle_mode();
+                }
+            }
+            KeyCode::Char(' ') => {
+                // Advance to next hunk
+                self.advance_hunk();
+            }
+            KeyCode::Char('b') | KeyCode::Char('B') => {
+                // 'b' for back - alternative to Shift+Space
+                debug_log("B key pressed (back)".to_string());
+                match self.mode {
+                    Mode::View | Mode::Review => {
+                        self.previous_hunk();
+                    }
+                    Mode::Streaming(StreamingType::Buffered) => {
+                        self.previous_hunk();
+                    }
+                    Mode::Streaming(StreamingType::Auto(_)) => {
+                        debug_log("Auto mode - ignoring back".to_string());
+                    }
+                }
+            }
+            KeyCode::Tab => self.cycle_focus_forward(),
+            KeyCode::BackTab => self.cycle_focus_backward(),
+            KeyCode::Char('j') | KeyCode::Down => {
+                if self.show_extended_help {
+                    // Scroll down in extended help - pre-clamp to prevent flashing
+                    let content_height = self.extended_help_content_height() as u16;
+                    let viewport_height = self.last_help_viewport_height;
+                    if content_height > viewport_height {
+                        let max_scroll = content_height.saturating_sub(viewport_height);
+                        if self.extended_help_scroll_offset < max_scroll {
+                            self.extended_help_scroll_offset =
+                                self.extended_help_scroll_offset.saturating_add(1);
+                        }
+                    }
+                } else {
+                    match self.focus {
+                        FocusPane::FileList => {
+                            // Navigate to next file and jump to its first hunk
+                            self.next_file();
+                            self.scroll_offset = 0;
+                        }
+                        FocusPane::HunkView => {
+                            if self.line_selection_mode {
+                                // Navigate to next change line
+                                self.next_change_line();
+                            } else {
+                                // Scroll down in hunk view - pre-clamp to prevent flashing
+                                let content_height = self.current_hunk_content_height() as u16;
+                                let viewport_height = self.last_diff_viewport_height;
+                                if content_height > viewport_height {
+                                    let max_scroll = content_height.saturating_sub(viewport_height);
+                                    if self.scroll_offset < max_scroll {
+                                        self.scroll_offset = self.scroll_offset.saturating_add(1);
+                                    }
+                                }
+                            }
+                        }
+                        FocusPane::HelpSidebar => {
+                            // Scroll down in help sidebar - pre-clamp to prevent flashing
+                            let content_height = self.help_content_height() as u16;
+                            let viewport_height = self.last_help_viewport_height;
+                            if content_height > viewport_height {
+                                let max_scroll = content_height.saturating_sub(viewport_height);
+                                if self.help_scroll_offset < max_scroll {
+                                    self.help_scroll_offset =
+                                        self.help_scroll_offset.saturating_add(1);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                if self.show_extended_help {
+                    // Scroll up in extended help
+                    self.extended_help_scroll_offset =
+                        self.extended_help_scroll_offset.saturating_sub(1);
+                } else {
+                    match self.focus {
+                        FocusPane::FileList => {
+                            // Navigate to previous file and jump to its first hunk
+                            self.previous_file();
+                            self.scroll_offset = 0;
+                        }
+                        FocusPane::HunkView => {
+                            if self.line_selection_mode {
+                                // Navigate to previous change line
+                                self.previous_change_line();
+                            } else {
+                                // Scroll up in hunk view
+                                self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                            }
+                        }
+                        FocusPane::HelpSidebar => {
+                            // Scroll up in help sidebar
+                            self.help_scroll_offset = self.help_scroll_offset.saturating_sub(1);
+                        }
+                    }
+                }
+            }
+            KeyCode::Char('n') => {
+                // Next file
+                self.next_file();
+                self.scroll_offset = 0;
+            }
+            KeyCode::Char('p') => {
+                // Previous file
+                self.previous_file();
+                self.scroll_offset = 0;
+            }
+            KeyCode::Char('f') => {
+                // Toggle filenames only
+                self.show_filenames_only = !self.show_filenames_only;
+            }
+            KeyCode::Char('s') | KeyCode::Char('S') => {
+                if self.mode == Mode::Review {
+                    // In review mode, toggle acceptance of the current hunk (in-memory)
+                    self.toggle_review_acceptance();
+                } else {
+                    // Stage/unstage current selection (smart toggle)
+                    self.stage_current_selection();
+                }
+            }
+            KeyCode::Char('w') => {
+                // Toggle line wrapping
+                self.wrap_lines = !self.wrap_lines;
+            }
+            KeyCode::Char('y') => {
+                // Toggle syntax highlighting
+                self.syntax_highlighting = !self.syntax_highlighting;
+            }
+            KeyCode::Char('l') | KeyCode::Char('L') => self.toggle_line_selection_mode(),
+            KeyCode::Char('h') => {
+                // Toggle help sidebar
+                self.show_help = !self.show_help;
+                self.help_scroll_offset = 0;
+                // If hiding help and focus was on help sidebar, move focus to hunk view
+                if !self.show_help && self.focus == FocusPane::HelpSidebar {
+                    self.focus = FocusPane::HunkView;
+                }
+            }
+            KeyCode::Char('H') => {
+                // Toggle extended help view
+                self.show_extended_help = !self.show_extended_help;
+                self.extended_help_scroll_offset = 0;
+            }
+            KeyCode::Esc => {
+                if self.mode == Mode::Review {
+                    // Exit review mode, go back to View
+                    self.exit_review_mode();
+                } else {
+                    // Reset to defaults
+                    self.show_extended_help = false;
+                    self.extended_help_scroll_offset = 0;
+                    self.mode = Mode::View;
+                    self.line_selection_mode = false;
+                    self.focus = FocusPane::HunkView;
+                    self.show_help = false;
+                    self.help_scroll_offset = 0;
+                }
+            }
+            _ => {}
+        }
+        false
     }
 
     fn advance_hunk(&mut self) {
@@ -839,7 +815,10 @@ impl App {
                 Mode::Review
             }
         };
-        self.last_auto_advance = Instant::now();
+        #[cfg(not(feature = "browser"))]
+        {
+            self.last_auto_advance = Instant::now();
+        }
     }
 
     fn cycle_focus_forward(&mut self) {
@@ -1079,6 +1058,7 @@ impl App {
         }
     }
 
+    #[cfg(not(feature = "browser"))]
     fn open_commit_mode(&mut self) -> Result<()> {
         // Temporarily suspend the TUI so git/editor can take over the terminal.
         disable_raw_mode()?;
@@ -1102,6 +1082,35 @@ impl App {
         self.last_auto_advance = Instant::now();
         self.needs_full_redraw = true;
         Ok(())
+    }
+
+    #[cfg(feature = "browser")]
+    fn open_commit_mode(&mut self) -> Result<()> {
+        anyhow::bail!("The browser cannot launch git or an editor. Use the demo's Commit button.")
+    }
+
+    pub fn update_viewports(&mut self, diff_height: u16, help_height: u16) {
+        self.last_diff_viewport_height = diff_height;
+        self.last_help_viewport_height = help_height;
+        self.clamp_scroll_offset(diff_height);
+        self.clamp_help_scroll_offset(help_height);
+        self.clamp_extended_help_scroll_offset(help_height);
+    }
+
+    #[cfg(feature = "browser")]
+    pub fn tick(&mut self, elapsed: Duration) -> bool {
+        if let Mode::Streaming(StreamingType::Auto(speed)) = self.mode {
+            let changes = self
+                .current_file()
+                .and_then(|file| file.hunks.get(self.current_hunk_index))
+                .map(|hunk| hunk.count_changes())
+                .unwrap_or(1);
+            if elapsed >= speed.duration_for_hunk(changes) {
+                self.advance_hunk();
+                return true;
+            }
+        }
+        false
     }
 
     fn annotate_staged_lines(&self, snapshot: &mut DiffSnapshot) {
@@ -1131,7 +1140,7 @@ impl App {
         }
     }
 
-    fn refresh_current_snapshot_from_git(&mut self) {
+    pub fn refresh_current_snapshot_from_git(&mut self) {
         let previous_selected_line = self.selected_line_index;
 
         match self.git_repo.get_diff_snapshot() {
@@ -1471,7 +1480,7 @@ impl App {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "browser")))]
 #[path = "../tests/app.rs"]
 mod tests;
 
