@@ -3,10 +3,13 @@ import {fileURLToPath} from 'node:url';
 import {dirname, join, resolve} from 'node:path';
 import {execFileSync} from 'node:child_process';
 
-const site = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const root = resolve(site, '..');
-const output = join(site, 'static', 'playground');
+const landing = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const root = resolve(landing, '..');
+const output = join(landing, 'dist', 'playground');
 await mkdir(output, {recursive: true});
+for (const file of ['index.html', 'playground.js', 'playground.css']) {
+  await copyFile(join(landing, file), join(landing, 'dist', file));
+}
 execFileSync('cargo', ['build', '--locked', '--release', '--lib', '--no-default-features', '--features', 'browser', '--target', 'wasm32-unknown-unknown'], {cwd: root, stdio: 'inherit'});
 execFileSync('wasm-bindgen', [
   join(root, 'target/wasm32-unknown-unknown/release/hunky.wasm'),

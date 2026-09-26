@@ -4,10 +4,10 @@ export default defineConfig({
   testDir: './tests',
   timeout: 60000,
   expect: {timeout: 15000},
-  use: {baseURL: 'http://127.0.0.1:4173', headless: true},
-  webServer: {
-    command: 'npm run serve -- --host 127.0.0.1 --port 4173 --no-open',
-    url: 'http://127.0.0.1:4173/hunky/',
+  use: {baseURL: process.env.DEMO_URL ?? 'http://127.0.0.1:4174', headless: true},
+  webServer: process.env.DEMO_URL ? undefined : {
+    command: 'npm run serve',
+    url: 'http://127.0.0.1:4174/',
     reuseExistingServer: !process.env.CI,
     timeout: 30000,
   },

@@ -73,15 +73,15 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: site/package-lock.json
+          cache-dependency-path: landing/package-lock.json
       - run: npm ci
-        working-directory: site
-      - name: Build precompiled browser demo and site
-        run: nix develop --accept-flake-config --command npm --prefix site run build
+        working-directory: landing
+      - name: Build precompiled hunky.sh landing page
+        run: nix develop --accept-flake-config --command npm --prefix landing run build
       - run: npx playwright install --with-deps chromium
-        working-directory: site
-      - run: npm run test:demo
-        working-directory: site
+        working-directory: landing
+      - run: npm test
+        working-directory: landing
 
   check-release:
     if: |
@@ -301,9 +301,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Nix for the browser WASM build
-        uses: cachix/install-nix-action@v31
-
       - name: Download coverage artifact
         uses: actions/download-artifact@v4
         with:
@@ -342,7 +339,8 @@ jobs:
           path: site/static/cache
 
       - name: Build Docusaurus site
-        run: nix develop --accept-flake-config --command npm --prefix site run build
+        run: npm run build
+        working-directory: site
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

@@ -214,12 +214,6 @@
 				position: relative;
 				z-index: 1;
 			}
-			.terminal-wrapper img {
-				display: block;
-				width: 100%;
-				height: auto;
-			}
-
 			/* ── Section shared ── */
 			section {
 				padding: 5rem 2rem;
@@ -513,6 +507,7 @@
 				}
 			}
 		</style>
+		<link rel="stylesheet" href="playground.css" />
 	</head>
 	<body>
 		<!-- Nav -->
@@ -567,8 +562,58 @@
 					View on GitHub
 				</a>
 			</div>
-			<div class="terminal-wrapper">
-				<img src="terminal.png" />
+			<div class="terminal-wrapper" aria-label="Hunky browser playground">
+				<div class="mac-window" data-testid="mac-window">
+					<div class="window-titlebar">
+						<div class="traffic-lights" aria-hidden="true"><span></span><span></span><span></span></div>
+						<span>hunky — browser demo</span>
+					</div>
+					<div class="window-body">
+						<div id="terminal" data-testid="terminal"></div>
+						<div id="demo-overlay" class="demo-overlay"><span id="load-message">Loading the isolated demo…</span></div>
+					</div>
+				</div>
+				<p class="demo-caption">
+					The real Hunky UI, running in your browser. A private, simulated Git repository — no sign-in,
+					no access to your files, and no remote Git operations. Restart resets everything.
+				</p>
+				<div class="demo-reset-row">
+					<span id="runtime-status" role="status" data-testid="runtime-status">Loading the isolated demo…</span>
+					<button id="demo-reset" type="button">Restart / reset fixture</button>
+				</div>
+				<details class="demo-tools">
+					<summary>Keyboard guide, editing &amp; repository inspector</summary>
+					<div class="demo-tools-content">
+						<p class="demo-message"><kbd>S</kbd> stages a hunk. <kbd>L</kbd> selects lines, <kbd>J/K</kbd> moves between them.
+							<kbd>Space/B</kbd> changes hunks; <kbd>N/P</kbd> changes files. <kbd>Tab</kbd> focuses the file list for whole-file staging.
+							<kbd>Esc</kbd> leaves help/review. Remotes, shell commands and external editors are unavailable.</p>
+						<div class="demo-toolbar">
+							<button type="button" data-key="s">Stage / unstage selection</button>
+							<button type="button" data-key="l">Line mode</button>
+							<button type="button" data-key="j">Next line</button>
+							<button type="button" data-key=" ">Next hunk</button>
+							<button type="button" data-key="n">Next file</button>
+							<button type="button" data-key="r">Review history</button>
+							<button type="button" data-key="H">Help</button>
+						</div>
+						<label>File path<input id="demo-path" aria-label="File path" value="src/shop.rs" list="demo-files" /></label>
+						<datalist id="demo-files"></datalist>
+						<button type="button" id="demo-load" data-demo-action>Load file</button>
+						<label>File contents<textarea id="demo-content" aria-label="File contents" rows="9" spellcheck="false"></textarea></label>
+						<div class="demo-toolbar">
+							<button type="button" id="demo-save" data-demo-action>Save working-tree edit</button>
+							<button type="button" id="demo-delete" data-demo-action>Delete working-tree file</button>
+							<button type="button" id="demo-inspect" data-demo-action>Refresh inspector</button>
+						</div>
+						<p class="demo-message" id="demo-message" role="status" data-testid="demo-message"></p>
+						<label>Commit message<input id="demo-commit-message" aria-label="Commit message" value="Demo commit" /></label>
+						<button type="button" id="demo-commit" data-demo-action>Commit staged changes (simulated)</button>
+						<div class="demo-diffs">
+							<div><h3>Staged: HEAD → index</h3><pre id="staged-diff" data-testid="staged-diff">Loading…</pre></div>
+							<div><h3>Unstaged: index → working tree</h3><pre id="unstaged-diff" data-testid="unstaged-diff">Loading…</pre></div>
+						</div>
+					</div>
+				</details>
 			</div>
 		</section>
 
@@ -863,6 +908,7 @@
 			<p>Open source &middot; Built with Rust &middot; MIT License</p>
 		</footer>
 
+		<script type="module" src="playground.js"></script>
 		<script>
 			var tabs = Array.from(document.querySelectorAll('.install-tab'));
 

@@ -20,9 +20,12 @@ site/node_modules/
 site/build/
 site/.docusaurus/
 site/.cache-loader/
-site/static/playground/
-site/playwright-report/
-site/test-results/
+landing/node_modules/
+landing/dist/
+landing/playwright-report/
+landing/test-results/
+.cloudflare-tools/
+.wrangler/
 
 # Secrets
 *.pem

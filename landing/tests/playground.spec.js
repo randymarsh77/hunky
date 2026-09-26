@@ -1,9 +1,10 @@
 import {test, expect} from '@playwright/test';
 
-async function ready(page) {
-  await page.goto('/hunky/');
+async function ready(page, tools = true) {
+  await page.goto('/');
   await expect(page.getByTestId('runtime-status')).toContainText('Ready.');
-  await expect(page.getByLabel('File contents')).toContainText('Hello from Orchard!');
+  await expect(page.getByLabel('File contents')).toHaveValue(/Hello from Orchard!/);
+  if (tools) await page.locator('.demo-tools summary').click();
 }
 
 test('real terminal stages and reverses a line, a hunk, and the next hunk', async ({page}) => {
@@ -60,15 +61,15 @@ test('keyboard staging, edits, index-only reversal, and isolated instances', asy
 test('same-page instances reset complete state and deny origin storage and network', async ({page}) => {
   await ready(page);
   const result = await page.evaluate(async () => {
-    const {mountIsolated} = await import('/hunky/playground/runtime/index.js');
+    const {mountIsolated} = await import('/playground/runtime/index.js');
     const containers = [document.createElement('div'), document.createElement('div')];
     containers.forEach(container => {
       container.style.cssText = 'width:800px;height:400px';
       document.body.append(container);
     });
     const options = {
-      moduleUrl: new URL('/hunky/playground/hunky.js', location.href),
-      runtimeBaseUrl: new URL('/hunky/playground/runtime/', location.href),
+      moduleUrl: new URL('/playground/hunky.js', location.href),
+      runtimeBaseUrl: new URL('/playground/runtime/', location.href),
     };
     const first = await mountIsolated(containers[0], options);
     const second = await mountIsolated(containers[1], options);
@@ -128,10 +129,45 @@ test('untracked additions, deletion staging, history, and commit errors', async 
 
 test('loading failure is visible and retry recovers', async ({page}) => {
   await page.route('**/playground/hunky_bg.wasm', route => route.abort());
-  await page.goto('/hunky/');
+  await page.goto('/');
   await expect(page.getByTestId('runtime-status')).toContainText('Demo unavailable');
-  await expect(page.getByRole('button', {name: 'Stage / unstage selection'})).toBeDisabled();
+  await expect(page.locator('[data-key="s"]')).toBeDisabled();
   await page.unroute('**/playground/hunky_bg.wasm');
   await page.getByRole('button', {name: 'Restart / reset fixture'}).click();
   await expect(page.getByTestId('runtime-status')).toContainText('Ready.');
+});
+
+test('existing hero contains one CSS window with responsive chrome and usable terminal', async ({page}) => {
+  await ready(page, false);
+  const window = page.getByTestId('mac-window');
+  await expect(page.locator('.hero .mac-window')).toHaveCount(1);
+  await expect(page.locator('img[src="terminal.png"]')).toHaveCount(0);
+  await expect(page.locator('.traffic-lights')).toHaveAttribute('aria-hidden', 'true');
+  await expect(page.locator('.traffic-lights button')).toHaveCount(0);
+  await expect(page.locator('.traffic-lights span')).toHaveCount(3);
+  await expect(page.locator('.demo-tools')).not.toHaveAttribute('open');
+  await window.scrollIntoViewIfNeeded();
+  const metrics = await window.evaluate(element => {
+    const title = element.querySelector('.window-titlebar').getBoundingClientRect();
+    const body = element.querySelector('.window-body').getBoundingClientRect();
+    const outer = element.getBoundingClientRect();
+    return {title: title.height, gap: body.top - title.bottom, ratio: outer.width / outer.height, shadow: getComputedStyle(element).boxShadow};
+  });
+  expect(metrics.title).toBe(28);
+  expect(metrics.gap).toBe(0);
+  expect(metrics.ratio).toBeGreaterThan(1.7);
+  expect(metrics.ratio).toBeLessThan(1.8);
+  expect(metrics.shadow).not.toBe('none');
+  await page.setViewportSize({width:390, height:844});
+  await window.scrollIntoViewIfNeeded();
+  await expect.poll(async () => (await page.frameLocator('iframe').locator('.xterm-screen').boundingBox()).width).toBeLessThan(350);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  const terminal = page.frameLocator('iframe').locator('.xterm-helper-textarea');
+  await terminal.focus();
+  await page.keyboard.press('s');
+  await page.locator('.demo-tools summary').click();
+  await page.getByRole('button', {name:'Refresh inspector'}).click();
+  await expect(page.getByTestId('staged-diff')).toContainText('Hello from Orchard!');
+  await page.getByRole('button', {name:'Restart / reset fixture'}).click();
+  await expect(page.getByTestId('staged-diff')).not.toContainText('Hello from Orchard!');
 });
