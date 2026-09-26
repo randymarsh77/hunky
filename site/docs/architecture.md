@@ -57,6 +57,12 @@ uses GitHub's `GITHUB_TOKEN`, `pages: write` and `id-token: write` permissions.
 Configure `CARGO_REGISTRY_TOKEN` and `NPM_TOKEN`
 only in the tui2web repository, following its release workflow documentation.
 
+The native cache workflow pins `static-nix-cache/setup`, `save` and `deploy` to
+the same immutable revision. Its `v1` tag predates the setup/deferred-deployment
+API, so substituting `@v1` breaks action resolution and the artifact contract.
+Update all three pins together when upgrading. Registry Cargo dependencies use
+their `Cargo.lock` checksums; Nix `outputHashes` are only for Git dependencies.
+
 The [landing page](https://hunky.sh), sourced from `landing/index.html`, embeds
 the real Hunky application compiled ahead of time to
 WebAssembly. Native and browser builds share `App::handle_key`, navigation,

@@ -19,6 +19,9 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@v31
 
+      - name: Check native Nix packaging
+        run: nix eval --accept-flake-config --raw .#packages.x86_64-linux.default.drvPath
+
       - name: Check formatting
         run: nix develop --accept-flake-config --command cargo fmt -- --check
 
@@ -165,7 +168,8 @@ jobs:
 
       - name: Setup static nix cache snapshot
         if: runner.os != 'Windows'
-        uses: randymarsh77/static-nix-cache/setup@v1
+        # v1 predates the setup/deferred-deploy API; keep all three actions on the same revision.
+        uses: randymarsh77/static-nix-cache/setup@7e5e0f2e1ce2e252c5bd173122d069a139edbd51
 
       - name: Build release binary
         id: nix-build
@@ -202,7 +206,7 @@ jobs:
           path: ${{ matrix.archive }}
 
       - name: Cache Nix Binaries
-        uses: randymarsh77/static-nix-cache/save@v1
+        uses: randymarsh77/static-nix-cache/save@7e5e0f2e1ce2e252c5bd173122d069a139edbd51
         if: runner.os != 'Windows'
         with:
           name: ${{ matrix.os }}
@@ -268,7 +272,7 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
 
-      - uses: randymarsh77/static-nix-cache/deploy@v1
+      - uses: randymarsh77/static-nix-cache/deploy@7e5e0f2e1ce2e252c5bd173122d069a139edbd51
         with:
           backend: github-releases
           github-token: ${{ secrets.GITHUB_TOKEN }}
