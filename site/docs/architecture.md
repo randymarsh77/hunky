@@ -44,9 +44,21 @@ hunky/
 ## Browser playground
 
 **Release status:** this review branch temporarily pins immutable public Git
-revisions of tui2web. Replace both Rust and npm pins with the validated published
-versions, update the lockfiles, remove the temporary Nix Git `outputHashes`, and
-rerun browser acceptance before deploying the landing page.
+revisions of tui2web. Package publication belongs to the tui2web repository's
+GitHub Actions release workflow, using its configured publishing secrets, not
+local npm or Cargo login. Wait for successful publication and registry
+verification of both the Rust crate and npm runtime from the intended immutable
+release tag. Only then replace both pins with the validated published versions,
+update the lockfiles, remove the temporary Nix Git `outputHashes`, and rerun
+native and browser acceptance before opening the normal PR and merging for
+the existing Pages deployment. Do not trigger a preview or production deployment
+before this gate; Hunky does not publish the tui2web packages.
+
+The playground adds no Hunky repository secrets. The existing native release
+pipeline references `NIX_SIGNING_KEY` for its Nix cache signing; GitHub supplies
+`GITHUB_TOKEN`, and the Pages deployment uses the workflow's `pages: write` and
+`id-token: write` permissions. Configure `CARGO_REGISTRY_TOKEN` and `NPM_TOKEN`
+only in the tui2web repository, following its release workflow documentation.
 
 The [homepage](/) embeds the real Hunky application compiled ahead of time to
 WebAssembly. Native and browser builds share `App::handle_key`, navigation,
