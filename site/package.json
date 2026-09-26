@@ -5,9 +5,7 @@
   "scripts": {
     "docusaurus": "docusaurus",
     "start": "docusaurus start",
-    "build": "npm run build:demo && docusaurus build",
-    "build:demo": "node scripts/build-demo.mjs",
-    "test:demo": "playwright test",
+    "build": "docusaurus build",
     "swizzle": "docusaurus swizzle",
     "deploy": "docusaurus deploy",
     "clear": "docusaurus clear",
@@ -16,7 +14,6 @@
     "write-heading-ids": "docusaurus write-heading-ids"
   },
   "dependencies": {
-    "@tui2web/runtime": "git+https://github.com/randymarsh77/tui2web.git#8c0f6114466c11d6c79f8e80970e8ad81ad344ae",
     "@docusaurus/core": "3.9.2",
     "@docusaurus/preset-classic": "3.9.2",
     "@mdx-js/react": "^3.0.0",
@@ -26,7 +23,6 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.55.0",
     "@docusaurus/module-type-aliases": "3.9.2",
     "@docusaurus/types": "3.9.2"
   },
@@ -43,6 +39,6 @@
     ]
   },
   "engines": {
-    "node": ">=22.0"
+    "node": ">=20.0"
   }
 }

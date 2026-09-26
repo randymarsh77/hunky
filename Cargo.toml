@@ -46,7 +46,7 @@ clap = { version = "4.5", features = ["derive"], optional = true }
 
 # Channels for async communication
 tokio-stream = { version = "0.1", optional = true }
-tui2web = { git = "https://github.com/randymarsh77/tui2web", rev = "7d7ea186db868a68eda7fa0e9f6b0d5892b0c75e", features = ["git", "wasm"], optional = true }
+tui2web = { version = "=0.1.0", features = ["git", "wasm"], optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
