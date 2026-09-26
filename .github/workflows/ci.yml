@@ -19,6 +19,9 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@v31
 
+      - name: Check native Nix packaging
+        run: nix eval --accept-flake-config --raw .#packages.x86_64-linux.default.drvPath
+
       - name: Check formatting
         run: nix develop --accept-flake-config --command cargo fmt -- --check
 
