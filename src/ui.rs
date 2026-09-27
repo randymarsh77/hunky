@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
@@ -134,10 +134,7 @@ impl<'a> UI<'a> {
         // Show status message if present
         if let Some(msg) = self.app.status_message() {
             title_left.push(Span::raw(" | "));
-            title_left.push(Span::styled(
-                msg,
-                Style::default().fg(Color::Green),
-            ));
+            title_left.push(Span::styled(msg, Style::default().fg(Color::Green)));
         }
 
         // Calculate padding to right-align help hint
@@ -425,6 +422,12 @@ impl<'a> UI<'a> {
             Style::default().fg(Color::Cyan)
         };
 
+        #[cfg(feature = "browser")]
+        let hunk_header = if hunk.id.index_only {
+            format!("{hunk_header} [INDEX ONLY - absent from working tree]")
+        } else {
+            hunk_header
+        };
         lines.push(Line::from(Span::styled(hunk_header, header_style)));
         lines.push(Line::from("")); // Empty line for spacing
 
@@ -636,6 +639,7 @@ impl<'a> UI<'a> {
             paragraph = paragraph.wrap(Wrap { trim: false });
         }
 
+        frame.render_widget(Clear, area);
         frame.render_widget(paragraph, area);
         viewport_height
     }
@@ -990,6 +994,6 @@ impl<'a> UI<'a> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "browser")))]
 #[path = "../tests/ui.rs"]
 mod tests;

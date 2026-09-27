@@ -11,7 +11,6 @@ test-repo/
 *debug.log
 *.log
 
-
 # Nix
 .direnv/
 result
@@ -21,3 +20,12 @@ site/node_modules/
 site/build/
 site/.docusaurus/
 site/.cache-loader/
+landing/node_modules/
+landing/dist/
+landing/playwright-report/
+landing/test-results/
+.cloudflare-tools/
+.wrangler/
+
+# Secrets
+*.pem
