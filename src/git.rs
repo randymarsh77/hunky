@@ -776,7 +776,11 @@ impl GitRepo {
     pub fn stage_file(&self, file_path: &Path) -> Result<()> {
         let repo = Repository::open(&self.repo_path)?;
         let mut index = repo.index()?;
-        index.add_path(file_path)?;
+        if self.repo_path.join(file_path).exists() {
+            index.add_path(file_path)?;
+        } else {
+            index.remove_path(file_path)?;
+        }
         index.write()?;
         Ok(())
     }
