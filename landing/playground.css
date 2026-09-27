@@ -1,0 +1,89 @@
+.terminal-wrapper {
+	aspect-ratio: 1109 / 679;
+	container-type: inline-size;
+}
+.terminal-wrapper [hidden] { display: none; }
+#demo-image { width: 100%; height: auto; }
+#demo-image:not([hidden]) { display: block; }
+#demo-start {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	padding: .8rem 1.4rem;
+	border: 1px solid #ffffff70;
+	border-radius: 8px;
+	background: #161722b8;
+	backdrop-filter: blur(6px);
+	color: #fff;
+	font-family: inherit;
+	font-size: 1rem;
+	font-weight: 600;
+	line-height: 1.4;
+	cursor: pointer;
+}
+#demo-start:hover { background: #292a3cde; }
+.terminal-wrapper :focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.mac-window {
+	position: absolute;
+	left: calc(100% * 56 / 1109);
+	top: calc(100% * 38 / 679);
+	width: calc(100% * 997 / 1109);
+	height: calc(100% * 567 / 679);
+	display: flex;
+	flex-direction: column;
+	container-type: inline-size;
+	border: 1px solid #666;
+	border-radius: 1cqw;
+	overflow: hidden;
+	background: #141821;
+	box-shadow: 0 28px 52px 8px #0009, 0 6px 16px #0008;
+}
+.window-titlebar {
+	flex: 0 0 4.93%;
+	display: flex;
+	align-items: center;
+	gap: .8cqw;
+	padding-left: .8cqw;
+	background: #383737;
+	border-bottom: 1px solid #4a4949;
+}
+.window-titlebar span {
+	width: 1.2cqw;
+	aspect-ratio: 1;
+	border-radius: 50%;
+	background: #ff5f57;
+}
+.window-titlebar span:nth-child(2) { background: #febc2e; }
+.window-titlebar span:nth-child(3) { background: #28c840; }
+.window-body { flex: 1; min-height: 0; position: relative; }
+#terminal, .demo-runtime, .demo-overlay { position: absolute; inset: 0; }
+.demo-overlay {
+	display: grid;
+	place-content: center;
+	padding: 1rem;
+	background: #141821;
+	color: #e2e8f0;
+	font-size: .9rem;
+}
+.demo-overlay a { color: #c4b5fd; text-decoration: underline; }
+[data-state="loading"] .demo-overlay {
+	background: linear-gradient(110deg, #141821 25%, #252a39 45%, #141821 65%);
+	background-size: 250% 100%;
+	animation: demo-shimmer 1.6s linear infinite;
+}
+@keyframes demo-shimmer {
+	from { background-position: 100% 0; }
+	to { background-position: -100% 0; }
+}
+@media (max-width: 640px) {
+	.demo-runtime {
+		width: 200%;
+		height: 200%;
+		transform: scale(.5);
+		transform-origin: top left;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	[data-state="loading"] .demo-overlay { animation: none; }
+}

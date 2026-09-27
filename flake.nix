@@ -30,6 +30,7 @@
         pkgs = import nixpkgs { inherit system overlays; };
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
           extensions = [ "rust-src" "rust-analyzer" ];
+          targets = [ "wasm32-unknown-unknown" ];
         };
         hunkyPackage = pkgs.rustPlatform.buildRustPackage {
           pname = "hunky";
@@ -63,6 +64,8 @@
             pkg-config
             openssl
             git
+            wasm-bindgen-cli
+            nodejs
           ];
 
           RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";

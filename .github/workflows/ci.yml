@@ -19,6 +19,9 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@v31
 
+      - name: Check native Nix packaging
+        run: nix eval --accept-flake-config --raw .#packages.x86_64-linux.default.drvPath
+
       - name: Check formatting
         run: nix develop --accept-flake-config --command cargo fmt -- --check
 
@@ -59,6 +62,29 @@ jobs:
         with:
           name: benchmark-results
           path: target/criterion
+
+  browser-demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Test portable application
+        run: nix develop --accept-flake-config --command cargo test --locked --no-default-features --features browser --lib
+      - name: Lint portable application
+        run: nix develop --accept-flake-config --command cargo clippy --locked --no-default-features --features browser --lib -- -D warnings
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: landing/package-lock.json
+      - run: npm ci
+        working-directory: landing
+      - name: Build precompiled hunky.sh landing page
+        run: nix develop --accept-flake-config --command npm --prefix landing run build
+      - run: npx playwright install --with-deps chromium
+        working-directory: landing
+      - run: npm test
+        working-directory: landing
 
   check-release:
     if: |
@@ -260,9 +286,11 @@ jobs:
   deploy-site:
     if: |
       !cancelled() &&
+      needs.browser-demo.result == 'success' &&
+      needs.build-test-run.result == 'success' &&
       ((github.event_name == 'push' && github.ref == 'refs/heads/master') ||
        (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false))
-    needs: [coverage, benchmark, deploy-cache]
+    needs: [coverage, benchmark, deploy-cache, browser-demo, build-test-run]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -298,7 +326,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: site/package-lock.json
 

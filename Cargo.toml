@@ -4,19 +4,32 @@ version = "0.1.0"
 edition = "2021"
 autotests = false
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "hunky"
+path = "src/main.rs"
+required-features = ["native"]
+
+[features]
+default = ["native"]
+native = ["dep:crossterm", "ratatui/crossterm", "dep:git2", "dep:notify", "dep:tokio", "dep:clap", "dep:tokio-stream"]
+browser = ["dep:tui2web", "dep:wasm-bindgen", "dep:serde", "dep:serde_json"]
+
 [dependencies]
 # TUI framework
-ratatui = "0.29"
-crossterm = "0.28"
+ratatui = { version = "0.29", default-features = false }
+crossterm = { version = "0.28", optional = true }
 
 # Git operations
-git2 = "0.19"
+git2 = { version = "0.19", optional = true }
 
 # File system watching
-notify = "6.1"
+notify = { version = "6.1", optional = true }
 
 # Async runtime
-tokio = { version = "1.42", features = ["full"] }
+tokio = { version = "1.42", features = ["full"], optional = true }
 
 # Error handling
 anyhow = "1.0"
@@ -26,13 +39,17 @@ thiserror = "2.0"
 similar = "2.6"
 
 # Syntax highlighting
-syntect = "5.2"
+syntect = { version = "5.2", default-features = false, features = ["default-fancy"] }
 
 # CLI argument parsing
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"], optional = true }
 
 # Channels for async communication
-tokio-stream = "0.1"
+tokio-stream = { version = "0.1", optional = true }
+tui2web = { version = "=0.1.0", features = ["git", "wasm"], optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.8.2", features = ["html_reports"] }

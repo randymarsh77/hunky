@@ -19,11 +19,18 @@ impl SyntaxHighlighter {
 
     /// Get a highlighter for a specific file that can be used to highlight multiple lines sequentially
     pub fn create_highlighter(&self, file_path: &Path) -> FileHighlighter<'_> {
+        #[cfg(not(feature = "browser"))]
         let syntax = self
             .syntax_set
             .find_syntax_for_file(file_path)
             .ok()
             .flatten()
+            .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
+        #[cfg(feature = "browser")]
+        let syntax = file_path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .and_then(|extension| self.syntax_set.find_syntax_by_extension(extension))
             .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
 
         let theme = &self.theme_set.themes["base16-ocean.dark"];
@@ -36,11 +43,19 @@ impl SyntaxHighlighter {
 
     #[allow(dead_code)]
     pub fn detect_language(&self, file_path: &Path) -> Option<String> {
-        self.syntax_set
+        #[cfg(not(feature = "browser"))]
+        return self
+            .syntax_set
             .find_syntax_for_file(file_path)
             .ok()
             .flatten()
-            .map(|s| s.name.clone())
+            .map(|s| s.name.clone());
+        #[cfg(feature = "browser")]
+        file_path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .and_then(|extension| self.syntax_set.find_syntax_by_extension(extension))
+            .map(|syntax| syntax.name.clone())
     }
 }
 
