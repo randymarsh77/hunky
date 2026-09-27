@@ -86,6 +86,9 @@ cargo run
 # Specify a different repository:
 hunky --repo /path/to/repo
 cargo run -- --repo /path/to/repo
+
+# Skip the startup animation (any key also skips it):
+hunky --no-splash
 ```
 
 **See the [Quick Start Guide](QUICKSTART.md) for detailed instructions and tips!**
