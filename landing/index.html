@@ -3,15 +3,15 @@
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>Hunky — Git changes, streamed in real-time</title>
+		<title>Hunky — watch git diffs as they land</title>
 		<meta
 			name="description"
-			content="A Terminal UI (TUI) for observing git changes in real-time. Watch diffs stream in as files change — perfect for monitoring AI agents and automated processes."
+			content="A terminal UI that watches your git repository and shows each diff as it lands. See what your coding agent changed, stage what you want, commit."
 		/>
-		<meta property="og:title" content="Hunky — Git changes, streamed in real-time" />
+		<meta property="og:title" content="Hunky — watch git diffs as they land" />
 		<meta
 			property="og:description"
-			content="A Terminal UI (TUI) for observing git changes in real-time. Watch diffs stream in as files change."
+			content="A terminal UI that watches your git repository and shows each diff as it lands. See what your coding agent changed, stage what you want, commit."
 		/>
 		<meta property="og:type" content="website" />
 		<meta property="og:url" content="https://hunky.sh" />
@@ -236,18 +236,13 @@
 				font-weight: 700;
 				line-height: 1.2;
 				letter-spacing: -0.02em;
-				margin-bottom: 1rem;
-			}
-			.section-desc {
-				color: var(--text-muted);
-				max-width: 560px;
-				margin-bottom: 3rem;
+				margin-bottom: 2.5rem;
 			}
 
 			/* ── Features ── */
 			.features-grid {
 				display: grid;
-				grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+				grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 				gap: 1.5rem;
 			}
 			.feature-card {
@@ -425,44 +420,6 @@
 				display: block;
 			}
 
-			/* ── Use cases ── */
-			.usecases {
-				display: grid;
-				grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-				gap: 1.25rem;
-			}
-			.usecase {
-				padding: 1.25rem 1.5rem;
-				border-radius: var(--radius);
-				border: 1px solid var(--border);
-				background: var(--bg-card);
-			}
-			.usecase strong {
-				display: block;
-				margin-bottom: 0.35rem;
-				font-size: 0.95rem;
-			}
-			.usecase p {
-				font-size: 0.85rem;
-				color: var(--text-muted);
-				margin: 0;
-			}
-
-			/* ── CTA ── */
-			.cta {
-				text-align: center;
-				padding: 6rem 2rem;
-			}
-			.cta .section-title {
-				margin-bottom: 1.5rem;
-			}
-			.cta-actions {
-				display: flex;
-				gap: 1rem;
-				justify-content: center;
-				flex-wrap: wrap;
-			}
-
 			/* ── Footer ── */
 			footer {
 				border-top: 1px solid var(--border);
@@ -543,11 +500,11 @@
 				<span class="gradient">diffs for the age of AI</span>
 			</h1>
 			<p>
-				A terminal UI that watches your repository and streams diffs as they happen. Perfect for
-				monitoring AI agents, builds, and automated processes.
+				A terminal UI that watches your repository and shows each diff as it lands. See what your
+				agent changed, stage what you want, commit.
 			</p>
 			<div class="hero-actions">
-				<a class="btn btn-primary" href="#install">Get Started</a>
+				<a class="btn btn-primary" href="#install">Install</a>
 				<a
 					class="btn btn-secondary"
 					href="https://github.com/randymarsh77/hunky"
@@ -579,59 +536,30 @@
 		<section id="features">
 			<div class="section-inner">
 				<span class="section-label">Features</span>
-				<h2 class="section-title">Everything you need to watch code evolve</h2>
-				<p class="section-desc">
-					Hunky gives you a real-time window into your repository, surfacing exactly the changes you
-					care about.
-				</p>
+				<h2 class="section-title">What it does</h2>
 				<div class="features-grid">
 					<div class="feature-card">
 						<span class="feature-icon">👁️</span>
-						<h3>Real-time Watching</h3>
+						<h3>Live diffs</h3>
+						<p>Watches the working tree and updates as files change. No refresh.</p>
+					</div>
+					<div class="feature-card">
+						<span class="feature-icon">⏩</span>
+						<h3>Stream only what's new</h3>
 						<p>
-							File system watcher detects changes to git-tracked files instantly. See diffs the
-							moment they happen.
+							Streaming mode skips what was already there and shows new hunks one at a time, stepped
+							by hand or auto-advanced.
 						</p>
 					</div>
 					<div class="feature-card">
-						<span class="feature-icon">🎯</span>
-						<h3>Smart Hunk Tracking</h3>
-						<p>
-							Intelligent "seen" tracking surfaces only new changes you haven't viewed yet. Never
-							miss an update.
-						</p>
+						<span class="feature-icon">✅</span>
+						<h3>Stage hunks or lines</h3>
+						<p>Stage a whole hunk or pick individual lines, then commit in your git editor.</p>
 					</div>
 					<div class="feature-card">
-						<span class="feature-icon">📊</span>
-						<h3>Stream Display</h3>
-						<p>
-							Shows one hunk at a time with context lines and colored backgrounds for additions and
-							deletions.
-						</p>
-					</div>
-					<div class="feature-card">
-						<span class="feature-icon">🎮</span>
-						<h3>Interactive Modes</h3>
-						<p>
-							Auto-stream for hands-free watching, or buffered mode for manual navigation with
-							keyboard controls.
-						</p>
-					</div>
-					<div class="feature-card">
-						<span class="feature-icon">⚡</span>
-						<h3>Dynamic Speed Control</h3>
-						<p>
-							Fast, medium, or slow — timing adapts to hunk size so larger changes get more reading
-							time.
-						</p>
-					</div>
-					<div class="feature-card">
-						<span class="feature-icon">🗂️</span>
-						<h3>File Grouping</h3>
-						<p>
-							Changes organized by file with unseen/total counts. Tab between the file list and diff
-							view.
-						</p>
+						<span class="feature-icon">🔍</span>
+						<h3>Review commits</h3>
+						<p>Pick a recent commit and walk its hunks, marking each one accepted.</p>
 					</div>
 				</div>
 			</div>
@@ -641,8 +569,7 @@
 		<section id="install" class="install-section">
 			<div class="section-inner">
 				<span class="section-label">Installation</span>
-				<h2 class="section-title">Get up and running in seconds</h2>
-				<p class="section-desc">Choose the installation method that works best for your setup.</p>
+				<h2 class="section-title">Install</h2>
 
 				<div class="install-tabs" role="tablist">
 					<button
@@ -693,7 +620,7 @@
 					<p class="install-note">
 						Requires
 						<a href="https://nixos.org/download" target="_blank" rel="noopener">Nix</a> with flakes
-						enabled. This is the recommended install method for reproducible builds.
+						enabled.
 					</p>
 				</div>
 
@@ -768,11 +695,10 @@
 					</div>
 
 					<p class="install-note">
-						Check the
+						All platforms and versions are on
 						<a href="https://github.com/randymarsh77/hunky/releases" target="_blank" rel="noopener"
-							>Releases page</a
-						>
-						for all available platforms and versions.
+							>Releases</a
+						>.
 					</p>
 				</div>
 
@@ -796,59 +722,6 @@
 						(cargo, rustc). Use <code>nix develop</code> for a pre-configured environment.
 					</p>
 				</div>
-			</div>
-		</section>
-
-		<!-- Use Cases -->
-		<section>
-			<div class="section-inner">
-				<span class="section-label">Use Cases</span>
-				<h2 class="section-title">Built for developers who want to see what's changing</h2>
-				<div class="usecases">
-					<div class="usecase">
-						<strong>🤖 AI Agent Monitoring</strong>
-						<p>
-							Watch in real-time as coding agents modify your repository. See every change the
-							moment it lands.
-						</p>
-					</div>
-					<div class="usecase">
-						<strong>🔧 Build Observation</strong>
-						<p>
-							See what files are generated or modified during build processes and code generation
-							steps.
-						</p>
-					</div>
-					<div class="usecase">
-						<strong>📝 Code Review</strong>
-						<p>
-							Stream through changes in an organized, paced manner — one hunk at a time, grouped by
-							file.
-						</p>
-					</div>
-					<div class="usecase">
-						<strong>📚 Learning</strong>
-						<p>
-							Understand how changes propagate through a codebase by watching edits flow across
-							files.
-						</p>
-					</div>
-				</div>
-			</div>
-		</section>
-
-		<!-- CTA -->
-		<section class="cta">
-			<h2 class="section-title">Ready to watch your code evolve?</h2>
-			<div class="cta-actions">
-				<a class="btn btn-primary" href="#install">Install Hunky</a>
-				<a
-					class="btn btn-secondary"
-					href="https://randymarsh77.github.io/hunky/docs/intro"
-					target="_blank"
-					rel="noopener"
-					>Read the Docs</a
-				>
 			</div>
 		</section>
 

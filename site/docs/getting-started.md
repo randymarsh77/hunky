@@ -4,64 +4,52 @@ sidebar_position: 2
 
 # Getting Started
 
-## Prerequisites
+## Install
 
-- [Nix](https://nixos.org/) with flakes enabled (recommended)
-- Or: Rust toolchain (cargo, rustc)
-
-## Installation
-
-### With Nix
+### Nix
 
 ```bash
-# Enter the development environment
-nix develop
-
-# Build the project
-cargo build --release
-
-# Run it
-cargo run --release
+# Run without installing
+nix run github:randymarsh77/hunky
 ```
 
-### Without Nix
+Or add `hunky.url = "github:randymarsh77/hunky";` to your flake inputs and use `hunky.packages.${system}.default`.
 
-Make sure you have Rust installed, then:
+### Prebuilt binaries
+
+Download from [Releases](https://github.com/randymarsh77/hunky/releases).
+
+- macOS and Linux: `hunky-<arch>-apple-darwin.tar.gz` / `hunky-<arch>-unknown-linux-gnu.tar.gz`.
+- Windows: `hunky-x86_64-pc-windows-msvc.zip` or `hunky-aarch64-pc-windows-msvc.zip`. The Linux binaries run on Windows only inside WSL.
+
+### From source
+
+Requires the Rust toolchain, or use `nix develop`.
 
 ```bash
-cargo build --release
-cargo run --release
+cargo install --git https://github.com/randymarsh77/hunky
 ```
 
 ## Usage
 
-Navigate to a git repository and run:
-
 ```bash
-hunky
-
-# or during development:
-cargo run
-
-# Specify a different repository:
-hunky --repo /path/to/repo
-
-# Skip the startup animation (any key also skips it):
-hunky --no-splash
+hunky                        # watch the current repository
+hunky --repo /path/to/repo   # watch another one
+hunky --no-splash            # skip the startup animation (any key also skips it)
 ```
 
-## Try the Demo
+Press `H` for the key bindings sidebar, or `Shift+H` for extended help.
 
-In a separate terminal, start the simulation script:
+## Try the demo
+
+`simulation.sh` clones a repository into `test-repo` and replays commits into it. In one terminal:
 
 ```bash
 ./simulation.sh
 ```
 
-Then build and run:
+In another:
 
 ```bash
 cargo run -- --repo test-repo
 ```
-
-The simulation will continuously make file changes that Hunky will detect and display automatically!

@@ -5,7 +5,7 @@ import {themes as prismThemes} from 'prism-react-renderer';
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'Hunky',
-  tagline: 'Git changes, streamed in real-time 🔥',
+  tagline: 'Watch git diffs as they land',
   favicon: 'img/favicon.ico',
 
   future: {
