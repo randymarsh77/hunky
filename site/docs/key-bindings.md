@@ -37,9 +37,10 @@ Press `H` in Hunky to show these in a sidebar, or `Shift+H` for extended help.
 
 | Key | Action |
 |-----|--------|
-| `s` | Stage/unstage the current hunk, or the selected line in line mode. In review, accept the hunk. |
+| `s` | Stage/unstage the current hunk (whole file for added or deleted files), or the selected line in line mode. In review, accept the hunk. |
 | `l` | Toggle line mode |
 | `c` | Commit with your configured git editor |
+| `Ctrl+Y` | Copy the current hunk, or the selected line in line mode, to the clipboard (OSC 52) |
 
 ## Display
 
