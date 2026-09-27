@@ -9,6 +9,10 @@ struct Args {
     /// Path to the git repository to watch
     #[arg(short, long, default_value = ".")]
     repo: String,
+
+    /// Skip the startup animation
+    #[arg(long)]
+    no_splash: bool,
 }
 
 #[tokio::main]
@@ -20,7 +24,7 @@ async fn main() -> Result<()> {
     let mut app = App::new(&args.repo).await?;
 
     // Run the application
-    app.run().await?;
+    app.run(!args.no_splash).await?;
 
     Ok(())
 }

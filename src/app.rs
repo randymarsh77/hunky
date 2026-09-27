@@ -8,6 +8,7 @@ use crossterm::{
 #[cfg(not(feature = "browser"))]
 use ratatui::{
     backend::{Backend, CrosstermBackend},
+    layout::Rect,
     Terminal,
 };
 use std::collections::HashMap;
@@ -22,6 +23,8 @@ use tokio::sync::mpsc;
 use crate::diff::{CommitInfo, DiffSnapshot, FileChange};
 use crate::git::GitRepo;
 use crate::input::{KeyCode, KeyEvent, KeyModifiers};
+#[cfg(not(feature = "browser"))]
+use crate::splash::{SplashAnimator, FRAME_MS};
 #[cfg(not(feature = "browser"))]
 use crate::ui::UI;
 #[cfg(not(feature = "browser"))]
@@ -244,7 +247,7 @@ impl App {
     }
 
     #[cfg(not(feature = "browser"))]
-    pub async fn run(&mut self) -> Result<()> {
+    pub async fn run(&mut self, show_splash: bool) -> Result<()> {
         // Setup terminal
         enable_raw_mode()?;
         let mut stdout = io::stdout();
@@ -252,7 +255,13 @@ impl App {
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
 
-        let result = self.run_loop(&mut terminal).await;
+        let mut result = Ok(());
+        if show_splash {
+            result = Self::play_splash(&mut terminal);
+        }
+        if result.is_ok() {
+            result = self.run_loop(&mut terminal).await;
+        }
 
         // Restore terminal
         disable_raw_mode()?;
@@ -264,6 +273,26 @@ impl App {
         terminal.show_cursor()?;
 
         result
+    }
+
+    /// Play the startup animation; any key skips it and is not passed on.
+    #[cfg(not(feature = "browser"))]
+    fn play_splash<B: Backend>(terminal: &mut Terminal<B>) -> Result<()> {
+        let size = terminal.size()?;
+        let mut splash = SplashAnimator::from_clock(Rect::new(0, 0, size.width, size.height));
+        while !splash.is_done() {
+            terminal.draw(|f| {
+                splash.set_area(f.area());
+                splash.render(f, f.area());
+            })?;
+            splash.tick();
+            if event::poll(Duration::from_millis(FRAME_MS as u64))? {
+                if let Event::Key(_) = event::read()? {
+                    break;
+                }
+            }
+        }
+        Ok(())
     }
 
     #[cfg(not(feature = "browser"))]

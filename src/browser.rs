@@ -17,6 +17,7 @@ use crate::{
     app::{App as HunkyApp, Mode, StreamingType},
     git::GitRepo,
     input::{KeyCode, KeyEvent, KeyModifiers},
+    splash::{SplashAnimator, FRAME_MS},
     ui::UI,
 };
 
@@ -25,6 +26,9 @@ pub struct BrowserApp {
     git: GitRepo,
     message: String,
     last_advance: f64,
+    /// The startup animation, until it finishes or a key skips it.
+    splash: Option<SplashAnimator>,
+    last_splash_tick: f64,
 }
 
 #[derive(Deserialize)]
@@ -151,14 +155,29 @@ impl Application for BrowserApp {
             message: "Browser-local simulated Git. S stages a hunk; L selects individual lines."
                 .into(),
             last_advance: context.now_ms,
+            // Hosts can pass `splash: "off"` in the init config to start on the diff view.
+            splash: (context.config.get("splash").map(String::as_str) != Some("off")).then(|| {
+                let area = Rect::new(0, 0, context.columns, context.rows);
+                SplashAnimator::new(area, context.random_u32())
+            }),
+            last_splash_tick: context.now_ms,
         };
         demo.publish_state(context)?;
         Ok(demo)
     }
 
+    fn initial_wake_after_ms(&self) -> Option<u32> {
+        self.splash.as_ref().map(|_| FRAME_MS)
+    }
+
     fn update(&mut self, input: Input, context: &mut Context) -> AppResult<Update> {
         let mut exit = false;
         let mut dirty = true;
+        let mut redraw = false;
+        // A key skips the splash and still reaches Hunky, so typing never feels ignored.
+        if matches!(input, Input::Key { .. } | Input::Text { .. }) && self.splash.take().is_some() {
+            redraw = true;
+        }
         match input {
             Input::Key { key, modifiers, .. } => {
                 let code = match key.as_str() {
@@ -214,6 +233,18 @@ impl Application for BrowserApp {
                     self.message = error;
                 }
             }
+            Input::Tick if self.splash.is_some() => {
+                let splash = self.splash.as_mut().expect("splash is active");
+                splash.set_area(Rect::new(0, 0, context.columns, context.rows));
+                splash.advance(context.now_ms - self.last_splash_tick);
+                self.last_splash_tick = context.now_ms;
+                if splash.is_done() {
+                    self.splash = None;
+                    self.last_advance = context.now_ms;
+                }
+                dirty = false;
+                redraw = true;
+            }
             Input::Tick => {
                 let elapsed =
                     Duration::from_millis((context.now_ms - self.last_advance).max(0.0) as u64);
@@ -231,15 +262,24 @@ impl Application for BrowserApp {
             self.app.borrow().mode(),
             Mode::Streaming(StreamingType::Auto(_))
         );
+        let wake_after_ms = if self.splash.is_some() {
+            Some(FRAME_MS)
+        } else {
+            auto.then_some(100)
+        };
         Ok(Update {
-            dirty,
+            dirty: dirty || redraw,
             files_changed: dirty,
             exit,
-            wake_after_ms: auto.then_some(100),
+            wake_after_ms,
         })
     }
 
     fn render(&self, frame: &mut Frame, _context: &Context) {
+        if let Some(splash) = &self.splash {
+            splash.render(frame, frame.area());
+            return;
+        }
         let mut app = self.app.borrow_mut();
         let (diff, help, _) = UI::new(&app).draw(frame);
         app.update_viewports(diff, help);
@@ -267,6 +307,17 @@ mod tests {
             &json!({
                 "version": 1, "columns": 100, "rows": 30, "nowMs": 0,
                 "randomSeed": 1, "snapshot": null
+            })
+            .to_string(),
+        )
+        .unwrap()
+    }
+
+    fn splash_runner(config: Value) -> Runner<BrowserApp> {
+        Runner::from_json(
+            &json!({
+                "version": 1, "columns": 100, "rows": 30, "nowMs": 0,
+                "randomSeed": 1, "snapshot": null, "config": config
             })
             .to_string(),
         )
@@ -316,10 +367,60 @@ mod tests {
     }
 
     #[test]
+    fn splash_plays_on_ticks_then_shows_hunky_and_stops_waking() {
+        let mut app = splash_runner(json!({}));
+        let initial = app.initial_output().unwrap();
+        assert_eq!(initial.wake_after_ms, Some(FRAME_MS));
+        assert!(initial.frame.unwrap().contains("any key to skip"));
+        let mut now = 0.0;
+        let mut frames = 0;
+        let last = loop {
+            now += FRAME_MS as f64;
+            let output = app
+                .dispatch(Command::Event {
+                    input: Input::Tick,
+                    now_ms: now,
+                })
+                .unwrap();
+            frames += 1;
+            // Splash frames repaint without republishing the demo state.
+            assert!(output.snapshot.is_none());
+            if output.wake_after_ms.is_none() || frames > 500 {
+                break output;
+            }
+        };
+        assert!(frames < 150, "splash took {frames} frames");
+        assert!(last.frame.unwrap().contains("Hunky"));
+    }
+
+    #[test]
+    fn key_skips_splash_and_still_reaches_hunky() {
+        let mut app = splash_runner(json!({}));
+        app.initial_output().unwrap();
+        let output = app
+            .dispatch(Command::Event {
+                input: Input::Text { text: "l".into() },
+                now_ms: 0.0,
+            })
+            .unwrap();
+        assert!(output.frame.unwrap().contains("Hunky"));
+        assert_eq!(output.wake_after_ms, None);
+        assert_eq!(state(&mut app)["current"]["lineMode"], true);
+    }
+
+    #[test]
+    fn splash_can_be_disabled_by_host_config() {
+        let mut app = splash_runner(json!({"splash": "off"}));
+        let initial = app.initial_output().unwrap();
+        assert_eq!(initial.wake_after_ms, None);
+        assert!(initial.frame.unwrap().contains("Hunky"));
+    }
+
+    #[test]
     fn real_app_stages_lines_hunks_and_keeps_instances_isolated() {
         let mut first = runner();
         let mut second = runner();
-        assert!(first
+        assert!(!first
             .initial_output()
             .unwrap()
             .frame

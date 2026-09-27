@@ -34,6 +34,7 @@ cargo install --git https://github.com/randymarsh77/hunky
 ```bash
 hunky                 # watch the current repository
 hunky --repo <path>   # watch another one
+hunky --no-splash     # skip the startup animation
 ```
 
 Press `H` for key bindings. See the [docs](https://randymarsh77.github.io/hunky/docs/intro)

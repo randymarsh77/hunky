@@ -13,6 +13,7 @@ pub mod logger;
 #[cfg(feature = "browser")]
 #[path = "browser_logger.rs"]
 pub mod logger;
+pub mod splash;
 pub mod syntax;
 pub mod ui;
 #[cfg(not(feature = "browser"))]
