@@ -320,10 +320,10 @@ async fn navigation_and_scroll_helpers_cover_core_branches() {
     assert_eq!(app.scroll_offset, 0);
     app.help_scroll_offset = 50;
     app.clamp_help_scroll_offset(10);
-    assert_eq!(app.help_scroll_offset, 22);
+    assert_eq!(app.help_scroll_offset, 23);
     app.extended_help_scroll_offset = 500;
     app.clamp_extended_help_scroll_offset(20);
-    assert_eq!(app.extended_help_scroll_offset, 88);
+    assert_eq!(app.extended_help_scroll_offset, 96);
 }
 
 #[tokio::test]
@@ -469,6 +469,52 @@ async fn stage_current_selection_handles_line_hunk_and_file_modes() {
     app.stage_current_selection();
     let cached_after_file_unstage = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
     assert!(cached_after_file_unstage.trim().is_empty());
+}
+
+#[tokio::test]
+async fn stage_current_selection_toggles_added_and_deleted_files_in_hunk_view() {
+    let repo = TestRepo::new();
+    repo.write_file("tracked.txt", "tracked\n");
+    repo.commit_all("initial");
+    repo.write_file("added.txt", "new file\n");
+    run_git(&repo.path, &["add", "-N", "added.txt"]);
+    std::fs::remove_file(repo.path.join("tracked.txt")).expect("failed to remove tracked file");
+
+    let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+        .await
+        .expect("failed to create app");
+    app.current_snapshot_index = 0;
+    app.focus = FocusPane::HunkView;
+    app.line_selection_mode = true;
+
+    let added_index = app.snapshots[0]
+        .files
+        .iter()
+        .position(|file| file.path == PathBuf::from("added.txt"))
+        .expect("expected added file in diff");
+    app.current_file_index = added_index;
+    app.current_hunk_index = 0;
+    app.stage_current_selection();
+    let staged_added = run_git(&repo.path, &["diff", "--cached", "--name-status"]);
+    assert!(staged_added.contains("A\tadded.txt"));
+    app.stage_current_selection();
+    let staged_added_after_unstage = run_git(&repo.path, &["diff", "--cached", "--name-status"]);
+    assert!(!staged_added_after_unstage.contains("A\tadded.txt"));
+
+    let deleted_index = app.snapshots[0]
+        .files
+        .iter()
+        .position(|file| file.path == PathBuf::from("tracked.txt"))
+        .expect("expected deleted file in diff");
+    app.current_file_index = deleted_index;
+    app.current_hunk_index = 0;
+    app.stage_current_selection();
+    let staged_deleted = run_git(&repo.path, &["diff", "--cached", "--name-status"]);
+    assert!(staged_deleted.contains("D\ttracked.txt"));
+    app.stage_current_selection();
+
+    let staged_after = run_git(&repo.path, &["diff", "--cached", "--name-only"]);
+    assert!(staged_after.trim().is_empty());
 }
 
 #[tokio::test]
@@ -1076,4 +1122,35 @@ async fn review_mode_advance_hunk_wraps() {
     }
     // Should have wrapped back
     assert!(app.current_file_index < file_count);
+}
+
+#[tokio::test]
+async fn copy_current_to_clipboard_sets_status_message() {
+    let repo = TestRepo::new();
+    let mut app = App::new(repo.path.to_str().expect("path should be utf-8"))
+        .await
+        .expect("failed to create app");
+    app.snapshots = vec![sample_snapshot()];
+    app.current_snapshot_index = 0;
+    app.current_file_index = 0;
+    app.current_hunk_index = 0;
+    app.focus = FocusPane::HunkView;
+
+    // In normal mode, copy hunk
+    app.line_selection_mode = false;
+    app.copy_current_to_clipboard();
+    assert_eq!(
+        app.status_message.as_deref(),
+        Some("Copied hunk to clipboard")
+    );
+    assert!(app.status_message_time.is_some());
+
+    // In line selection mode, copy line
+    app.line_selection_mode = true;
+    app.selected_line_index = 0; // "-old\n"
+    app.copy_current_to_clipboard();
+    assert_eq!(
+        app.status_message.as_deref(),
+        Some("Copied line to clipboard")
+    );
 }

@@ -109,9 +109,59 @@ pub struct App {
     review_commit_cursor: usize,
     review_selecting_commit: bool,
     review_snapshot: Option<DiffSnapshot>,
+    // Status message for user feedback (e.g., "Copied to clipboard")
+    status_message: Option<String>,
+    #[cfg(not(feature = "browser"))]
+    status_message_time: Option<Instant>,
 }
 
 impl App {
+    /// Toggle file-level staging and return whether snapshot refresh is needed.
+    fn toggle_file_staging_for_change(git_repo: &GitRepo, file: &mut FileChange) -> bool {
+        let any_staged = file.hunks.iter().any(|h| h.staged);
+        if any_staged {
+            match git_repo.unstage_file(&file.path) {
+                Ok(_) => {
+                    for hunk in &mut file.hunks {
+                        hunk.staged = false;
+                        hunk.staged_line_indices.clear();
+                    }
+                    debug_log(format!("Unstaged file {}", file.path.display()));
+                    true
+                }
+                Err(e) => {
+                    debug_log(format!("Failed to unstage file: {}", e));
+                    false
+                }
+            }
+        } else {
+            match git_repo.stage_file(&file.path) {
+                Ok(_) => {
+                    for hunk in &mut file.hunks {
+                        hunk.staged = true;
+                        hunk.staged_line_indices.clear();
+                        for (idx, line) in hunk.lines.iter().enumerate() {
+                            if Self::is_diff_change_line(line) {
+                                hunk.staged_line_indices.insert(idx);
+                            }
+                        }
+                    }
+                    debug_log(format!("Staged file {}", file.path.display()));
+                    true
+                }
+                Err(e) => {
+                    debug_log(format!("Failed to stage file: {}", e));
+                    false
+                }
+            }
+        }
+    }
+
+    fn is_diff_change_line(line: &str) -> bool {
+        (line.starts_with('+') && !line.starts_with("+++"))
+            || (line.starts_with('-') && !line.starts_with("---"))
+    }
+
     #[cfg(not(feature = "browser"))]
     pub async fn new(repo_path: &str) -> Result<Self> {
         let git_repo = GitRepo::new(repo_path)?;
@@ -185,6 +235,9 @@ impl App {
             review_commit_cursor: 0,
             review_selecting_commit: false,
             review_snapshot: None,
+            status_message: None,
+            #[cfg(not(feature = "browser"))]
+            status_message_time: None,
         };
 
         Ok(app)
@@ -233,6 +286,14 @@ impl App {
                 if elapsed >= speed.duration_for_hunk(change_count) {
                     self.advance_hunk();
                     self.last_auto_advance = Instant::now();
+                }
+            }
+
+            // Auto-dismiss status message after 3 seconds
+            if let Some(time) = self.status_message_time {
+                if time.elapsed() > Duration::from_secs(3) {
+                    self.status_message = None;
+                    self.status_message_time = None;
                 }
             }
 
@@ -337,6 +398,11 @@ impl App {
             KeyCode::Char('q') | KeyCode::Char('Q') => return true,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 return true;
+            }
+            #[cfg(not(feature = "browser"))]
+            KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Copy current hunk or selected line to clipboard
+                self.copy_current_to_clipboard();
             }
             KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 // Shift+Space goes to previous hunk (works in View, Streaming Buffered, and Review)
@@ -901,7 +967,11 @@ impl App {
                     // Stage/unstage a single line
                     if let Some(snapshot) = self.snapshots.get_mut(self.current_snapshot_index) {
                         if let Some(file) = snapshot.files.get_mut(self.current_file_index) {
-                            if let Some(hunk) = file.hunks.get_mut(self.current_hunk_index) {
+                            if matches!(file.status.as_str(), "Added" | "Deleted") {
+                                refresh_needed =
+                                    Self::toggle_file_staging_for_change(&self.git_repo, file)
+                                        || refresh_needed;
+                            } else if let Some(hunk) = file.hunks.get_mut(self.current_hunk_index) {
                                 // Get the selected line
                                 if let Some(selected_line) =
                                     hunk.lines.get(self.selected_line_index)
@@ -971,7 +1041,11 @@ impl App {
                     // Toggle staging for the current hunk
                     if let Some(snapshot) = self.snapshots.get_mut(self.current_snapshot_index) {
                         if let Some(file) = snapshot.files.get_mut(self.current_file_index) {
-                            if let Some(hunk) = file.hunks.get_mut(self.current_hunk_index) {
+                            if matches!(file.status.as_str(), "Added" | "Deleted") {
+                                refresh_needed =
+                                    Self::toggle_file_staging_for_change(&self.git_repo, file)
+                                        || refresh_needed;
+                            } else if let Some(hunk) = file.hunks.get_mut(self.current_hunk_index) {
                                 match self.git_repo.toggle_hunk_staging(hunk, &file.path) {
                                     Ok(is_staged_now) => {
                                         if is_staged_now {
@@ -1055,6 +1129,64 @@ impl App {
 
         if refresh_needed {
             self.refresh_current_snapshot_from_git();
+        }
+    }
+
+    /// Copy text to the system clipboard using the OSC 52 terminal escape sequence.
+    /// This is supported by most modern terminal emulators.
+    #[cfg(not(feature = "browser"))]
+    fn write_to_clipboard(text: &str) {
+        use base64::Engine;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(text);
+        // OSC 52: \x1b]52;c;<base64>\x07
+        let osc52 = format!("\x1b]52;c;{}\x07", encoded);
+        // Write directly to stdout, bypassing ratatui's buffer
+        let _ = io::Write::write_all(&mut io::stdout(), osc52.as_bytes());
+        let _ = io::Write::flush(&mut io::stdout());
+    }
+
+    /// Copy the current hunk or selected line to the clipboard
+    #[cfg(not(feature = "browser"))]
+    fn copy_current_to_clipboard(&mut self) {
+        if let Some(snapshot) = self.current_snapshot() {
+            if let Some(file) = snapshot.files.get(self.current_file_index) {
+                if let Some(hunk) = file.hunks.get(self.current_hunk_index) {
+                    let text = if self.line_selection_mode {
+                        // Copy just the selected line (without the diff prefix)
+                        if let Some(line) = hunk.lines.get(self.selected_line_index) {
+                            let content = if line.starts_with('+')
+                                || line.starts_with('-')
+                                || line.starts_with(' ')
+                            {
+                                &line[1..]
+                            } else {
+                                line.as_str()
+                            };
+                            content.trim_end().to_string()
+                        } else {
+                            return;
+                        }
+                    } else {
+                        // Copy the entire hunk content
+                        hunk.lines
+                            .iter()
+                            .map(|l| l.trim_end())
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    };
+
+                    Self::write_to_clipboard(&text);
+
+                    let msg = if self.line_selection_mode {
+                        "Copied line to clipboard"
+                    } else {
+                        "Copied hunk to clipboard"
+                    };
+                    debug_log(msg.to_string());
+                    self.status_message = Some(msg.to_string());
+                    self.status_message_time = Some(Instant::now());
+                }
+            }
         }
     }
 
@@ -1403,6 +1535,10 @@ impl App {
         self.review_commit_cursor
     }
 
+    pub fn status_message(&self) -> Option<&str> {
+        self.status_message.as_deref()
+    }
+
     /// Get the height (line count) of the current hunk content
     pub fn current_hunk_content_height(&self) -> usize {
         if let Some(snapshot) = self.current_snapshot() {
@@ -1438,7 +1574,7 @@ impl App {
 
     /// Get the height (line count) of the help sidebar content
     pub fn help_content_height(&self) -> usize {
-        32 // Number of help lines in draw_help_sidebar
+        33 // Number of help lines in draw_help_sidebar
     }
 
     /// Clamp scroll offset to valid range based on content and viewport height
@@ -1465,7 +1601,7 @@ impl App {
 
     /// Get the height (line count) of the extended help content
     pub fn extended_help_content_height(&self) -> usize {
-        108 // Exact number of lines in draw_extended_help
+        116 // Exact number of lines in draw_extended_help
     }
 
     /// Clamp extended help scroll offset to valid range based on content and viewport height
