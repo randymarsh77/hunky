@@ -5,6 +5,13 @@ use clap::CommandFactory;
 fn parses_default_repo_argument() {
     let args = Args::try_parse_from(["hunky"]).expect("args should parse");
     assert_eq!(args.repo, ".");
+    assert!(!args.no_splash);
+}
+
+#[test]
+fn parses_no_splash_flag() {
+    let args = Args::try_parse_from(["hunky", "--no-splash"]).expect("args should parse");
+    assert!(args.no_splash);
 }
 
 #[test]
