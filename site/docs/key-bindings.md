@@ -4,42 +4,50 @@ sidebar_position: 3
 
 # Key Bindings
 
+Press `H` in Hunky to show these in a sidebar, or `Shift+H` for extended help.
+
+## Navigation
+
 | Key | Action |
 |-----|--------|
-| `q` / `Q` | Quit the application |
-| `Ctrl+C` | Quit the application |
-| `Tab` | Toggle focus between file list and diff view |
-| `Space` | Advance to next hunk |
-| `Shift+Space` | Go back to previous hunk |
-| `j` / `↓` | Scroll down (diff) or navigate files (file list) |
-| `k` / `↑` | Scroll up (diff) or navigate files (file list) |
-| `n` | Next file |
-| `p` | Previous file |
-| `m` | Toggle Auto-Stream / Buffered mode |
-| `v` | Toggle All Changes / New Changes Only |
-| `s` | Cycle stream speed (Fast → Medium → Slow) |
+| `q` / `Ctrl+C` | Quit |
+| `Tab` / `Shift+Tab` | Cycle focus: file list, diff, help sidebar |
+| `Space` | Next hunk |
+| `b` / `Shift+Space` | Previous hunk (not in auto-stream) |
+| `j` / `↓`, `k` / `↑` | Next/previous file (file list), scroll (diff), next/previous changed line (line mode) |
+| `n` / `p` | Next/previous file |
+
+## Modes
+
+| Key | Action |
+|-----|--------|
+| `m` | Cycle mode: View → Streaming (Buffered) → Streaming (Auto Fast → Medium → Slow) → View |
+| `r` | Review a commit: choose from the last 20 with `j`/`k` and `Enter` |
+| `Esc` | Leave review, or reset to defaults (View mode, line mode off, help hidden) |
+
+**View** shows every current change. **Streaming** records the state when you enter it and shows only hunks that appear afterwards. Buffered waits for `Space`; Auto advances on its own, allowing each hunk a base delay plus time per changed line:
+
+| Speed | Base | Per changed line |
+|-------|------|------------------|
+| Fast | 0.3 s | 0.2 s |
+| Medium | 0.5 s | 0.5 s |
+| Slow | 0.5 s | 1.0 s |
+
+## Staging and commits
+
+| Key | Action |
+|-----|--------|
+| `s` | Stage/unstage the current hunk (whole file for added or deleted files), or the selected line in line mode. In review, accept the hunk. |
+| `l` | Toggle line mode |
+| `c` | Commit with your configured git editor |
+| `Ctrl+Y` | Copy the current hunk, or the selected line in line mode, to the clipboard (OSC 52) |
+
+## Display
+
+| Key | Action |
+|-----|--------|
 | `w` | Toggle line wrapping |
+| `y` | Toggle syntax highlighting |
+| `f` | Toggle filenames only |
 | `h` | Toggle help sidebar |
-| `c` | Clear all seen hunks |
-| `f` | Toggle hunk / filename-only view |
-| `r` | Refresh — capture a new snapshot |
-
-## View Modes
-
-**All Changes** — Cycles through current git status, showing all hunks.
-
-**New Changes Only** (default) — Only shows unseen hunks. Press `c` to reset.
-
-## Stream Modes
-
-**Auto-Stream** — Hunks advance automatically at the selected speed.
-
-**Buffered** — Manual control with Space / Shift+Space.
-
-## Stream Speeds
-
-| Speed | Base Delay | Per Change Line |
-|-------|-----------|-----------------|
-| Fast | 0.3 s | + 0.2 s |
-| Medium | 0.5 s | + 0.5 s |
-| Slow | 0.5 s | + 1.0 s |
+| `H` | Toggle extended help |

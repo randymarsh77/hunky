@@ -45,7 +45,7 @@ export default function Home() {
   return (
     <Layout
       title="Home"
-      description="Hunky — a TUI for observing git changes in real-time">
+      description="Hunky: a terminal UI that shows git diffs as they land">
       <HomepageHeader />
     </Layout>
   );
