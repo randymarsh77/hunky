@@ -33,6 +33,21 @@ hunky/
 | `similar` | Diff generation |
 | `clap` | CLI argument parsing |
 
+## Release versions
+
+`version.txt` is the release version. The release workflow updates it together
+with the Hunky package versions in `Cargo.toml` and `Cargo.lock` using
+`node scripts/release-version.mjs --sync`. CI checks all three with `--check`.
+Nix reads its package version from `Cargo.toml`, and `hunky --version` uses
+Cargo's package version. Release packaging verifies that each binary reports
+the version being published.
+
+An unpinned `nix run github:randymarsh77/hunky` builds the source revision resolved
+by Nix, not necessarily the latest release tag. To select a particular release,
+use a tag such as `nix run github:randymarsh77/hunky/v0.2.2`; use `--refresh` to
+refresh Nix's cached resolution of an unpinned reference. The package version
+labels the build but does not select which source revision is built.
+
 ## Data Flow
 
 1. **Watcher** (`watcher.rs`) monitors the file system for changes
@@ -62,6 +77,20 @@ through the upstream-maintained floating `v1` tag. Keep all three actions on the
 same major version for their shared artifact contract, and validate the release
 matrix when upgrading. Registry Cargo dependencies use
 their `Cargo.lock` checksums; Nix `outputHashes` are only for Git dependencies.
+
+Every production GitHub Pages deployment includes the binary cache at
+`https://randymarsh77.github.io/hunky/cache`. When no new release build is needed,
+`deploy-cache` supplies an empty paths file to the deploy action so it regenerates
+the static index from the existing `nix-cache` GitHub release instead of detecting
+or uploading runner store paths. A failed cache job blocks production Pages
+deployment; pull request previews may omit the cache.
+
+After Docusaurus builds, `site/scripts/assemble-nix-cache.mjs` validates and adds
+`nix-cache-info` and the `.narinfo` files under `site/build/cache`. It rewrites
+relative `nar/` URLs to absolute GitHub release downloads because GitHub Pages
+does not support the generator's Cloudflare `_redirects` file. Store metadata
+and signatures remain unchanged. Missing, empty or invalid cache snapshots fail
+the deployment rather than publishing documentation that removes the cache.
 
 The [landing page](https://hunky.sh), sourced from `landing/index.html`, embeds
 the real Hunky application compiled ahead of time to

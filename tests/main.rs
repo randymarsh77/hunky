@@ -40,3 +40,13 @@ fn help_text_mentions_tui_description() {
 fn unknown_argument_returns_error() {
     assert!(Args::try_parse_from(["hunky", "--unknown"]).is_err());
 }
+
+#[test]
+fn version_flag_reports_package_version() {
+    let error = Args::try_parse_from(["hunky", "--version"]).expect_err("version should exit");
+    assert_eq!(error.kind(), clap::error::ErrorKind::DisplayVersion);
+    assert_eq!(
+        error.to_string(),
+        format!("hunky {}\n", env!("CARGO_PKG_VERSION"))
+    );
+}
