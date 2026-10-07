@@ -36,6 +36,27 @@ jobs:
       - name: Build
         run: nix develop --accept-flake-config --command cargo build --locked
 
+      - name: Setup Python for native E2E tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup native E2E terminal harness
+        run: |
+          python3 -m venv target/e2e-venv
+          target/e2e-venv/bin/pip install -r tests/e2e/requirements.txt
+
+      - name: Test native binary against real Git repositories
+        run: target/e2e-venv/bin/python -m unittest discover -s tests/e2e -v
+
+      - name: Upload native E2E failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-e2e-failures
+          path: target/e2e-results
+          if-no-files-found: ignore
+
       - name: Test
         run: nix develop --accept-flake-config --command cargo test --locked
 

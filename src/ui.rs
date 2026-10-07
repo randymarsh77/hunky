@@ -200,8 +200,8 @@ impl<'a> UI<'a> {
 
     fn draw_file_list(&self, frame: &mut Frame, area: Rect) {
         let snapshot = match self.app.current_snapshot() {
-            Some(s) => s,
-            None => {
+            Some(s) if !s.files.is_empty() => s,
+            _ => {
                 let empty = Paragraph::new("No changes")
                     .block(Block::default().borders(Borders::ALL).title("Files"));
                 frame.render_widget(empty, area);
@@ -422,7 +422,6 @@ impl<'a> UI<'a> {
             Style::default().fg(Color::Cyan)
         };
 
-        #[cfg(feature = "browser")]
         let hunk_header = if hunk.id.index_only {
             format!("{hunk_header} [INDEX ONLY - absent from working tree]")
         } else {

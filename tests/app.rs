@@ -518,7 +518,6 @@ async fn stage_current_selection_toggles_added_and_deleted_files_in_hunk_view() 
 }
 
 #[tokio::test]
-#[ignore = "Known flaky hunk restage path; run explicitly during debugging"]
 async fn hunk_toggle_can_restage_after_unstage_on_simple_file() {
     let repo = TestRepo::new();
     repo.write_file("example.txt", "line 1\nline 2\nline 3\n");

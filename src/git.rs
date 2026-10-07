@@ -52,39 +52,87 @@ impl GitRepo {
         None
     }
 
-    fn single_line_patch_header(
-        hunk: &Hunk,
-        line_index: usize,
-    ) -> Option<(usize, usize, usize, usize)> {
-        if line_index >= hunk.lines.len() {
-            return None;
-        }
-
-        let mut old_lineno = hunk.old_start;
-        let mut new_lineno = hunk.new_start;
-
-        for (idx, line) in hunk.lines.iter().enumerate() {
-            if idx == line_index {
-                if line.starts_with('-') && !line.starts_with("---") {
-                    return Some((old_lineno, 1, new_lineno, 0));
+    fn map_unchanged_line(
+        diff: &git2::Diff<'_>,
+        line_number: usize,
+        old_to_new: bool,
+    ) -> Result<Option<usize>> {
+        let mut mapped = Some(line_number);
+        diff.foreach(
+            &mut |_, _| true,
+            None,
+            None,
+            Some(&mut |_, _, line| {
+                let (source, destination) = if old_to_new {
+                    (line.old_lineno(), line.new_lineno())
+                } else {
+                    (line.new_lineno(), line.old_lineno())
+                };
+                if source == Some(line_number as u32) {
+                    mapped = destination.map(|number| number as usize);
                 }
-                if line.starts_with('+') && !line.starts_with("+++") {
-                    return Some((old_lineno, 0, new_lineno, 1));
-                }
-                return None;
-            }
+                true
+            }),
+        )?;
+        Ok(mapped)
+    }
 
-            if line.starts_with(' ') {
-                old_lineno += 1;
-                new_lineno += 1;
-            } else if line.starts_with('-') && !line.starts_with("---") {
-                old_lineno += 1;
-            } else if line.starts_with('+') && !line.starts_with("+++") {
-                new_lineno += 1;
+    fn change_index_position(
+        diff: &git2::Diff<'_>,
+        line_number: usize,
+        origin: char,
+    ) -> Result<Option<usize>> {
+        use std::cell::Cell;
+
+        let old_cursor = Cell::new(1);
+        let new_cursor = Cell::new(1);
+        let mut position = None;
+        diff.foreach(
+            &mut |_, _| true,
+            None,
+            Some(&mut |_, hunk| {
+                old_cursor.set(hunk.old_start() as usize + usize::from(hunk.old_lines() == 0));
+                new_cursor.set(hunk.new_start() as usize + usize::from(hunk.new_lines() == 0));
+                true
+            }),
+            Some(&mut |_, _, line| {
+                let coordinate = if origin == '+' {
+                    line.new_lineno()
+                } else {
+                    line.old_lineno()
+                };
+                if line.origin() == origin && coordinate == Some(line_number as u32) {
+                    position = Some(if origin == '+' {
+                        old_cursor.get()
+                    } else {
+                        new_cursor.get()
+                    });
+                }
+                if matches!(line.origin(), ' ' | '-') {
+                    old_cursor.set(old_cursor.get() + 1);
+                }
+                if matches!(line.origin(), ' ' | '+') {
+                    new_cursor.set(new_cursor.get() + 1);
+                }
+                true
+            }),
+        )?;
+        Ok(position)
+    }
+
+    fn quoted_patch_path(prefix: &str, path: &Path) -> Result<String> {
+        let path = path.to_str().context("Patch path must be UTF-8")?;
+        let mut quoted = format!("\"{prefix}/");
+        for byte in path.bytes() {
+            match byte {
+                b'"' => quoted.push_str("\\\""),
+                b'\\' => quoted.push_str("\\\\"),
+                32..=126 => quoted.push(char::from(byte)),
+                _ => quoted.push_str(&format!("\\{byte:03o}")),
             }
         }
-
-        None
+        quoted.push('"');
+        Ok(quoted)
     }
 
     fn build_single_line_patch(
@@ -92,6 +140,7 @@ impl GitRepo {
         hunk: &Hunk,
         line_index: usize,
         file_path: &Path,
+        reverse: bool,
     ) -> Result<String> {
         // Verify the line exists
         if line_index >= hunk.lines.len() {
@@ -105,27 +154,84 @@ impl GitRepo {
             return Err(anyhow::anyhow!("Can only patch + or - lines"));
         }
 
-        let (old_start, old_line_count, new_start, new_line_count) =
-            Self::single_line_patch_header(hunk, line_index)
-                .ok_or_else(|| anyhow::anyhow!("Can only patch + or - lines"))?;
+        let repo = Repository::open(&self.repo_path)?;
+        let index = repo.index()?;
+        let head_tree = match repo.head() {
+            Ok(head) => Some(head.peel_to_tree()?),
+            Err(error)
+                if matches!(
+                    error.code(),
+                    git2::ErrorCode::UnbornBranch | git2::ErrorCode::NotFound
+                ) =>
+            {
+                None
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let mut options = DiffOptions::new();
+        options.pathspec(file_path).context_lines(u32::MAX);
+        let staged =
+            repo.diff_tree_to_index(head_tree.as_ref(), Some(&index), Some(&mut options))?;
+        let unstaged = repo.diff_index_to_workdir(Some(&index), Some(&mut options))?;
+        let (old_line, new_line) = Self::hunk_line_coordinates(hunk, line_index)
+            .context("Selected line has no diff coordinates")?;
+
+        // Translate HEAD/worktree selection coordinates into the current index.
+        // A zero-length patch range names the line BEFORE an insertion.
+        let (position, insert) = match (selected_line.starts_with('+'), reverse) {
+            (true, false) => (
+                Self::change_index_position(
+                    &unstaged,
+                    new_line.context("Missing worktree line")?,
+                    '+',
+                )?,
+                true,
+            ),
+            (true, true) => (
+                if hunk.id.index_only {
+                    new_line
+                } else {
+                    Self::map_unchanged_line(
+                        &unstaged,
+                        new_line.context("Missing worktree line")?,
+                        false,
+                    )?
+                },
+                false,
+            ),
+            (false, false) => (
+                Self::map_unchanged_line(&staged, old_line.context("Missing HEAD line")?, true)?,
+                false,
+            ),
+            (false, true) => (
+                Self::change_index_position(&staged, old_line.context("Missing HEAD line")?, '-')?,
+                true,
+            ),
+        };
+        let position =
+            position.context("Selected change is no longer present in the current index diff")?;
+        let (old_start, old_line_count, new_start, new_line_count) = if insert {
+            (position.saturating_sub(1), 0, position, 1)
+        } else {
+            (position, 1, position.saturating_sub(1), 0)
+        };
+        let old_path = Self::quoted_patch_path("a", file_path)?;
+        let new_path = Self::quoted_patch_path("b", file_path)?;
 
         // Create a proper unified diff patch
         let mut patch = String::new();
-        patch.push_str(&format!(
-            "diff --git a/{} b/{}\n",
-            file_path.display(),
-            file_path.display()
-        ));
-        patch.push_str(&format!("--- a/{}\n", file_path.display()));
-        patch.push_str(&format!("+++ b/{}\n", file_path.display()));
+        patch.push_str(&format!("diff --git {} {}\n", old_path, new_path));
+        patch.push_str(&format!("--- {old_path}\n"));
+        patch.push_str(&format!("+++ {new_path}\n"));
         patch.push_str(&format!(
             "@@ -{},{} +{},{} @@\n",
             old_start, old_line_count, new_start, new_line_count
         ));
 
-        patch.push_str(selected_line);
+        patch.push(if insert { '+' } else { '-' });
+        patch.push_str(&selected_line[1..]);
         if !selected_line.ends_with('\n') {
-            patch.push('\n');
+            patch.push_str("\n\\ No newline at end of file\n");
         }
 
         Ok(patch)
@@ -141,16 +247,13 @@ impl GitRepo {
         use std::io::Write;
         use std::process::Command;
 
-        let patch = self.build_single_line_patch(hunk, line_index, file_path)?;
+        let patch = self.build_single_line_patch(hunk, line_index, file_path, reverse)?;
 
         let mut cmd = Command::new("git");
         cmd.arg("apply")
             .arg("--cached")
             .arg("--unidiff-zero")
             .arg("--recount");
-        if reverse {
-            cmd.arg("--reverse");
-        }
         cmd.arg("-")
             .current_dir(&self.repo_path)
             .stdin(std::process::Stdio::piped())
@@ -639,6 +742,7 @@ impl GitRepo {
         let mut diff_opts = DiffOptions::new();
         diff_opts.include_untracked(true);
         diff_opts.recurse_untracked_dirs(true);
+        diff_opts.show_untracked_content(true);
 
         // Get HEAD tree (handle empty repo case)
         let head_tree = match repo.head() {
@@ -655,7 +759,7 @@ impl GitRepo {
         diff.foreach(
             &mut |delta, _progress| {
                 let file_path = match delta.status() {
-                    Delta::Added | Delta::Modified | Delta::Deleted => {
+                    Delta::Added | Delta::Modified | Delta::Deleted | Delta::Untracked => {
                         delta.new_file().path().or_else(|| delta.old_file().path())
                     }
                     _ => None,
@@ -664,7 +768,11 @@ impl GitRepo {
                 if let Some(path) = file_path {
                     files.push(FileChange {
                         path: path.to_path_buf(),
-                        status: format!("{:?}", delta.status()),
+                        status: if delta.status() == Delta::Untracked {
+                            "Added".to_string()
+                        } else {
+                            format!("{:?}", delta.status())
+                        },
                         hunks: Vec::new(),
                     });
                 }
@@ -677,10 +785,26 @@ impl GitRepo {
 
         // Now get the actual diff content for each file
         for file in &mut files {
-            if let Ok(hunks) = self.get_file_hunks(&repo, &file.path) {
-                file.hunks = hunks;
+            file.hunks = self.get_file_hunks(&repo, &file.path, false)?;
+        }
+
+        let staged = repo.diff_tree_to_index(head_tree.as_ref(), None, None)?;
+        for delta in staged.deltas() {
+            if let Some(path) = delta.new_file().path().or_else(|| delta.old_file().path()) {
+                if let Some(file) = files.iter_mut().find(|file| file.path == path) {
+                    if file.hunks.is_empty() {
+                        file.hunks = self.get_file_hunks(&repo, path, true)?;
+                    }
+                } else {
+                    files.push(FileChange {
+                        path: path.to_path_buf(),
+                        status: format!("{:?}", delta.status()),
+                        hunks: self.get_file_hunks(&repo, path, true)?,
+                    });
+                }
             }
         }
+        files.sort_by(|left, right| left.path.cmp(&right.path));
 
         Ok(DiffSnapshot {
             timestamp: std::time::SystemTime::now(),
@@ -688,10 +812,18 @@ impl GitRepo {
         })
     }
 
-    fn get_file_hunks(&self, repo: &Repository, path: &Path) -> Result<Vec<Hunk>> {
+    fn get_file_hunks(
+        &self,
+        repo: &Repository,
+        path: &Path,
+        index_only: bool,
+    ) -> Result<Vec<Hunk>> {
         let mut diff_opts = DiffOptions::new();
         diff_opts.pathspec(path);
         diff_opts.context_lines(3);
+        diff_opts.include_untracked(true);
+        diff_opts.recurse_untracked_dirs(true);
+        diff_opts.show_untracked_content(true);
 
         // Get HEAD tree (handle empty repo case)
         let head_tree = match repo.head() {
@@ -700,8 +832,11 @@ impl GitRepo {
         };
 
         // Get diff from HEAD to workdir (includes both staged and unstaged)
-        let diff =
-            repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut diff_opts))?;
+        let diff = if index_only {
+            repo.diff_tree_to_index(head_tree.as_ref(), None, Some(&mut diff_opts))?
+        } else {
+            repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut diff_opts))?
+        };
 
         let path_buf = path.to_path_buf();
 
@@ -768,8 +903,25 @@ impl GitRepo {
         }
 
         // Extract the hunks - clone to avoid lifetime issues
-        let result = hunks.borrow().clone();
+        let mut result = hunks.borrow().clone();
+        if index_only {
+            for hunk in &mut result {
+                hunk.id.index_only = true;
+            }
+        }
         Ok(result)
+    }
+
+    pub fn file_has_staged_changes(&self, file_path: &Path) -> Result<bool> {
+        let repo = Repository::open(&self.repo_path)?;
+        let status = repo.status_file(file_path)?;
+        Ok(status.intersects(
+            git2::Status::INDEX_NEW
+                | git2::Status::INDEX_MODIFIED
+                | git2::Status::INDEX_DELETED
+                | git2::Status::INDEX_RENAMED
+                | git2::Status::INDEX_TYPECHANGE,
+        ))
     }
 
     /// Stage an entire file
@@ -881,6 +1033,9 @@ impl GitRepo {
         let index = repo.index()?;
         let mut unstaged_opts = DiffOptions::new();
         unstaged_opts.pathspec(file_path);
+        unstaged_opts.include_untracked(true);
+        unstaged_opts.recurse_untracked_dirs(true);
+        unstaged_opts.show_untracked_content(true);
         let unstaged_diff = repo.diff_index_to_workdir(Some(&index), Some(&mut unstaged_opts))?;
 
         let mut staged_lines = HashSet::new();
@@ -1048,6 +1203,19 @@ impl GitRepo {
     /// Unstage an entire file
     pub fn unstage_file(&self, file_path: &Path) -> Result<()> {
         use std::process::Command;
+
+        let repo = Repository::open(&self.repo_path)?;
+        let unborn = match repo.head() {
+            Ok(_) => false,
+            Err(error) if error.code() == git2::ErrorCode::UnbornBranch => true,
+            Err(error) => return Err(error.into()),
+        };
+        if unborn {
+            let mut index = repo.index()?;
+            index.remove_path(file_path)?;
+            index.write()?;
+            return Ok(());
+        }
 
         let output = Command::new("git")
             .arg("reset")

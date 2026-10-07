@@ -48,6 +48,38 @@ use a tag such as `nix run github:randymarsh77/hunky/v0.2.2`; use `--refresh` to
 refresh Nix's cached resolution of an unpinned reference. The package version
 labels the build but does not select which source revision is built.
 
+## Native end-to-end tests
+
+`tests/e2e` runs the actual native binary in a Unix pseudo-terminal, with a
+terminal emulator reading its rendered output and real keyboard events driving
+the application. Each test creates an isolated repository using `git init`,
+with independent Git configuration, commits and working-tree edits. Assertions
+inspect exact index blobs and file modes, porcelain status, unchanged HEAD and
+unchanged working-tree bytes rather than trusting the staged UI indicator.
+
+The 44 scenarios cover file/hunk/line stage and unstage, restaging, multiple hunks
+and files, duplicate lines, partially staged and index-only changes, untracked,
+added/deleted/renamed files, unborn repositories, empty/binary files, ignored
+files, special paths, newline formats, executable files, external watcher
+updates, review, successful/canceled commit-editor handoff, index-lock error
+reporting and retry, buffered/automatic mode transitions, focus/reset/resize,
+repository discovery and invalid-path startup, splash skipping and terminal cleanup.
+It runs on Linux in CI. Run locally on macOS or Linux:
+
+```bash
+nix develop --command cargo build --locked
+python3 -m venv target/e2e-venv
+target/e2e-venv/bin/pip install -r tests/e2e/requirements.txt
+target/e2e-venv/bin/python -m unittest discover -s tests/e2e -v
+```
+
+Set `HUNKY_BINARY` to test a different native build and `HUNKY_E2E_TIMEOUT`
+to adjust the default 10-second condition deadline on a slower machine.
+Tests wait for terminal or Git state changes rather than fixed startup sleeps.
+Failures retain ANSI transcripts, emulated screen contents and Git diffs under
+`target/e2e-results`, uploaded by CI. No staging regressions are skipped or
+marked as expected failures in this suite. Windows PTY support is not included.
+
 ## Data Flow
 
 1. **Watcher** (`watcher.rs`) monitors the file system for changes
