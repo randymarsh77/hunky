@@ -6,6 +6,7 @@ target/criterion
 
 # Testing
 test-repo/
+__pycache__/
 
 # Logs
 *debug.log

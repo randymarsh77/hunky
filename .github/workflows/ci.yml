@@ -16,6 +16,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check release version consistency
+        run: |
+          node --test scripts/*.test.mjs
+          node scripts/release-version.mjs --check
+
       - name: Install Nix
         uses: cachix/install-nix-action@v31
 
@@ -31,11 +36,36 @@ jobs:
       - name: Build
         run: nix develop --accept-flake-config --command cargo build --locked
 
+      - name: Setup Python for native E2E tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup native E2E terminal harness
+        run: |
+          python3 -m venv target/e2e-venv
+          target/e2e-venv/bin/pip install -r tests/e2e/requirements.txt
+
+      - name: Test native binary against real Git repositories
+        run: target/e2e-venv/bin/python -m unittest discover -s tests/e2e -v
+
+      - name: Upload native E2E failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-e2e-failures
+          path: target/e2e-results
+          if-no-files-found: ignore
+
       - name: Test
         run: nix develop --accept-flake-config --command cargo test --locked
 
       - name: Run smoke check
-        run: nix develop --accept-flake-config --command cargo run --locked -- --help
+        run: |
+          nix develop --accept-flake-config --command cargo run --locked -- --help
+          nix develop --accept-flake-config --command bash <<'EOF'
+          test "$(cargo run --locked -- --version)" = "hunky $(cat version.txt)"
+          EOF
 
   benchmark:
     runs-on: ubuntu-latest
@@ -189,6 +219,7 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           test -x "$BINARY_PATH"
+          test "$("$BINARY_PATH" --version)" = "hunky $(cat version.txt)"
           tar -czf "${{ matrix.archive }}" -C "$(dirname "$BINARY_PATH")" "${{ matrix.binary }}"
 
       - name: Package release artifact (Windows)
@@ -196,6 +227,9 @@ jobs:
         shell: pwsh
         run: |
           if (!(Test-Path $env:BINARY_PATH)) { throw "Missing binary at $env:BINARY_PATH" }
+          $version = (Get-Content version.txt -Raw).Trim()
+          $actual = & $env:BINARY_PATH --version
+          if ($LASTEXITCODE -ne 0 -or $actual -ne "hunky $version") { throw "Unexpected binary version: $actual" }
           Compress-Archive -Path $env:BINARY_PATH -DestinationPath "${{ matrix.archive }}"
 
       - name: Upload release artifact
@@ -255,12 +289,16 @@ jobs:
           files: hunky-*.*
 
   deploy-cache:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: |
+      !cancelled() &&
+      github.event_name == 'push' && github.ref == 'refs/heads/master' &&
+      (needs.release-builds.result == 'success' || needs.release-builds.result == 'skipped')
     needs: [release-builds]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
+      STORAGE_BACKEND: github-releases
       GITHUB_OWNER: ${{ github.repository_owner }}
       GITHUB_REPO: ${{ github.event.repository.name }}
       GITHUB_RELEASE_TAG: nix-cache
@@ -271,10 +309,15 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
 
+      - name: Use existing release cache when no release build is needed
+        if: needs.release-builds.result == 'skipped'
+        run: touch empty-cache-paths.txt
+
       - uses: randymarsh77/static-nix-cache/deploy@v1
         with:
           backend: github-releases
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          paths-file: ${{ needs.release-builds.result == 'skipped' && './empty-cache-paths.txt' || '' }}
           static: ./nix-cache-static
 
       - name: Upload cache artifact
@@ -282,12 +325,14 @@ jobs:
         with:
           name: nix-cache-static
           path: ./nix-cache-static
+          if-no-files-found: error
 
   deploy-site:
     if: |
       !cancelled() &&
       needs.browser-demo.result == 'success' &&
       needs.build-test-run.result == 'success' &&
+      (github.event_name == 'pull_request' || needs.deploy-cache.result == 'success') &&
       ((github.event_name == 'push' && github.ref == 'refs/heads/master') ||
        (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false))
     needs: [coverage, benchmark, deploy-cache, browser-demo, build-test-run]
@@ -334,16 +379,24 @@ jobs:
         run: npm ci
         working-directory: site
 
+      - name: Test Pages cache assembly
+        run: npm test
+        working-directory: site
+
       - name: Download nix cache artifact
         if: needs.deploy-cache.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: nix-cache-static
-          path: site/static/cache
+          path: nix-cache-static
 
       - name: Build Docusaurus site
         run: npm run build
         working-directory: site
+
+      - name: Assemble Pages binary cache
+        if: needs.deploy-cache.result == 'success'
+        run: node site/scripts/assemble-nix-cache.mjs nix-cache-static site/build/cache https://github.com/${{ github.repository }}/releases/download/nix-cache
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

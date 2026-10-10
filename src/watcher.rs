@@ -29,47 +29,53 @@ impl FileWatcher {
 
         watcher.watch(repo_path.as_ref(), RecursiveMode::Recursive)?;
 
-        // Spawn a task to handle file system events
-        tokio::spawn(async move {
-            let mut last_snapshot_time = std::time::Instant::now();
+        std::thread::spawn(move || {
+            use std::sync::mpsc::RecvTimeoutError;
+
+            let mut deadline: Option<std::time::Instant> = None;
             let debounce_duration = std::time::Duration::from_millis(500);
 
             debug_log(format!("File watcher started for {:?}", repo_path));
 
             loop {
-                match rx.recv() {
+                let event = match deadline {
+                    Some(deadline) => rx.recv_timeout(
+                        deadline.saturating_duration_since(std::time::Instant::now()),
+                    ),
+                    None => rx.recv().map_err(|_| RecvTimeoutError::Disconnected),
+                };
+                match event {
                     Ok(Ok(event)) => {
                         // Only process events for git-tracked files
                         if should_process_event(&event, &repo_path) {
                             debug_log(format!("Received event: {:?}", event));
                             debug_log("Processing event for snapshot".to_string());
-                            // Debounce: only create a new snapshot if enough time has passed
-                            let now = std::time::Instant::now();
-                            if now.duration_since(last_snapshot_time) >= debounce_duration {
-                                if let Ok(snapshot) = git_repo.get_diff_snapshot() {
-                                    debug_log(format!(
-                                        "Created snapshot with {} files",
-                                        snapshot.files.len()
-                                    ));
-                                    // Only send if there are actual changes
-                                    if !snapshot.files.is_empty() {
-                                        let _ = snapshot_sender.send(snapshot);
-                                        last_snapshot_time = now;
-                                    } else {
-                                        debug_log("Snapshot was empty, not sending".to_string());
-                                    }
-                                }
-                            } else {
-                                debug_log("Debouncing, too soon since last snapshot".to_string());
-                            }
+                            deadline = Some(std::time::Instant::now() + debounce_duration);
                         } else if crate::logger::filtered_events_enabled() {
                             crate::logger::trace(format!("Filtered event: {:?}", event));
                         }
                     }
                     Ok(Err(e)) => {
-                        debug_log(format!("Watch error: {:?}", e));
+                        crate::logger::warn(format!("Watch error: {:?}", e));
                     }
-                    Err(_) => break,
+                    Err(RecvTimeoutError::Timeout) => {
+                        deadline = None;
+                        match git_repo.get_diff_snapshot() {
+                            Ok(snapshot) => {
+                                debug_log(format!(
+                                    "Created snapshot with {} files",
+                                    snapshot.files.len()
+                                ));
+                                if snapshot_sender.send(snapshot).is_err() {
+                                    break;
+                                }
+                            }
+                            Err(error) => {
+                                crate::logger::warn(format!("Failed to refresh Git diff: {error}"));
+                            }
+                        }
+                    }
+                    Err(RecvTimeoutError::Disconnected) => break,
                 }
             }
         });

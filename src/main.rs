@@ -3,7 +3,7 @@ use clap::Parser;
 use hunky::{app::App, logger};
 
 #[derive(Parser, Debug)]
-#[command(name = "hunky")]
+#[command(name = "hunky", version)]
 #[command(about = "A TUI for streaming git changes in real-time", long_about = None)]
 struct Args {
     /// Path to the git repository to watch

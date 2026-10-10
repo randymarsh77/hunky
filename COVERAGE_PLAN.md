@@ -26,6 +26,7 @@
 - [x] Expand `ui.rs` rendering assertions across modes/layout widths/help states
 - [x] Add integration tests for watcher event loop + snapshot dispatch behavior
 - [x] Add `main.rs` smoke/integration tests for CLI argument behavior
+- [x] Add native PTY end-to-end acceptance tests against isolated real Git repositories (`tests/e2e`), checking exact index contents, status and unchanged working-tree files
 - [ ] Introduce phased CI enforcement (`--fail-under-lines`) and raise threshold to 100%
 
 ## Notes on 100% goal

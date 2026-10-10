@@ -36,6 +36,7 @@ cargo install --git https://github.com/randymarsh77/hunky
 hunky                        # watch the current repository
 hunky --repo /path/to/repo   # watch another one
 hunky --no-splash            # skip the startup animation (any key also skips it)
+hunky --version              # print the binary's release version
 ```
 
 Press `H` for the key bindings sidebar, or `Shift+H` for extended help.

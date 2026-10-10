@@ -119,45 +119,23 @@ pub struct App {
 }
 
 impl App {
-    /// Toggle file-level staging and return whether snapshot refresh is needed.
-    fn toggle_file_staging_for_change(git_repo: &GitRepo, file: &mut FileChange) -> bool {
+    /// Toggle file-level staging without changing the working tree.
+    fn toggle_file_staging_for_change(git_repo: &GitRepo, file: &FileChange) -> Result<()> {
         let any_staged = file.hunks.iter().any(|h| h.staged);
-        if any_staged {
-            match git_repo.unstage_file(&file.path) {
-                Ok(_) => {
-                    for hunk in &mut file.hunks {
-                        hunk.staged = false;
-                        hunk.staged_line_indices.clear();
-                    }
-                    debug_log(format!("Unstaged file {}", file.path.display()));
-                    true
-                }
-                Err(e) => {
-                    debug_log(format!("Failed to unstage file: {}", e));
-                    false
-                }
-            }
+        #[cfg(not(feature = "browser"))]
+        let any_staged = if file.hunks.is_empty() {
+            git_repo.file_has_staged_changes(&file.path)?
         } else {
-            match git_repo.stage_file(&file.path) {
-                Ok(_) => {
-                    for hunk in &mut file.hunks {
-                        hunk.staged = true;
-                        hunk.staged_line_indices.clear();
-                        for (idx, line) in hunk.lines.iter().enumerate() {
-                            if Self::is_diff_change_line(line) {
-                                hunk.staged_line_indices.insert(idx);
-                            }
-                        }
-                    }
-                    debug_log(format!("Staged file {}", file.path.display()));
-                    true
-                }
-                Err(e) => {
-                    debug_log(format!("Failed to stage file: {}", e));
-                    false
-                }
-            }
+            any_staged
+        };
+        if any_staged {
+            git_repo.unstage_file(&file.path)?;
+            debug_log(format!("Unstaged file {}", file.path.display()));
+        } else {
+            git_repo.stage_file(&file.path)?;
+            debug_log(format!("Staged file {}", file.path.display()));
         }
+        Ok(())
     }
 
     fn is_diff_change_line(line: &str) -> bool {
@@ -987,177 +965,56 @@ impl App {
     }
 
     fn stage_current_selection(&mut self) {
-        let mut refresh_needed = false;
-
-        match self.focus {
-            FocusPane::HunkView => {
-                // Check if we're in line selection mode
-                if self.line_selection_mode {
-                    // Stage/unstage a single line
-                    if let Some(snapshot) = self.snapshots.get_mut(self.current_snapshot_index) {
-                        if let Some(file) = snapshot.files.get_mut(self.current_file_index) {
-                            if matches!(file.status.as_str(), "Added" | "Deleted") {
-                                refresh_needed =
-                                    Self::toggle_file_staging_for_change(&self.git_repo, file)
-                                        || refresh_needed;
-                            } else if let Some(hunk) = file.hunks.get_mut(self.current_hunk_index) {
-                                // Get the selected line
-                                if let Some(selected_line) =
-                                    hunk.lines.get(self.selected_line_index)
-                                {
-                                    // Only stage change lines (+ or -)
-                                    if (selected_line.starts_with('+')
-                                        && !selected_line.starts_with("+++"))
-                                        || (selected_line.starts_with('-')
-                                            && !selected_line.starts_with("---"))
-                                    {
-                                        // Check if line is already staged
-                                        let is_staged = hunk
-                                            .staged_line_indices
-                                            .contains(&self.selected_line_index);
-
-                                        if is_staged {
-                                            // Unstage the single line
-                                            match self.git_repo.unstage_single_line(
-                                                hunk,
-                                                self.selected_line_index,
-                                                &file.path,
-                                            ) {
-                                                Ok(_) => {
-                                                    // Remove this line from staged indices
-                                                    hunk.staged_line_indices
-                                                        .remove(&self.selected_line_index);
-                                                    debug_log(format!(
-                                                        "Unstaged line {} in {}",
-                                                        self.selected_line_index,
-                                                        file.path.display()
-                                                    ));
-                                                    refresh_needed = true;
-                                                }
-                                                Err(e) => {
-                                                    debug_log(format!("Failed to unstage line: {}. Note: Line-level unstaging is experimental and may not work for all hunks. Consider unstaging the entire hunk with Shift+U instead.", e));
-                                                }
-                                            }
-                                        } else {
-                                            // Stage the single line
-                                            match self.git_repo.stage_single_line(
-                                                hunk,
-                                                self.selected_line_index,
-                                                &file.path,
-                                            ) {
-                                                Ok(_) => {
-                                                    // Mark this line as staged
-                                                    hunk.staged_line_indices
-                                                        .insert(self.selected_line_index);
-                                                    debug_log(format!(
-                                                        "Staged line {} in {}",
-                                                        self.selected_line_index,
-                                                        file.path.display()
-                                                    ));
-                                                    refresh_needed = true;
-                                                }
-                                                Err(e) => {
-                                                    debug_log(format!("Failed to stage line: {}. Note: Line-level staging is experimental and may not work for all hunks. Consider staging the entire hunk with Shift+S instead.", e));
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    // Toggle staging for the current hunk
-                    if let Some(snapshot) = self.snapshots.get_mut(self.current_snapshot_index) {
-                        if let Some(file) = snapshot.files.get_mut(self.current_file_index) {
-                            if matches!(file.status.as_str(), "Added" | "Deleted") {
-                                refresh_needed =
-                                    Self::toggle_file_staging_for_change(&self.git_repo, file)
-                                        || refresh_needed;
-                            } else if let Some(hunk) = file.hunks.get_mut(self.current_hunk_index) {
-                                match self.git_repo.toggle_hunk_staging(hunk, &file.path) {
-                                    Ok(is_staged_now) => {
-                                        if is_staged_now {
-                                            debug_log(format!(
-                                                "Staged hunk in {}",
-                                                file.path.display()
-                                            ));
-                                        } else {
-                                            debug_log(format!(
-                                                "Unstaged hunk in {}",
-                                                file.path.display()
-                                            ));
-                                        }
-                                        refresh_needed = true;
-                                    }
-                                    Err(e) => {
-                                        debug_log(format!("Failed to toggle hunk staging: {}", e));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            FocusPane::FileList => {
-                // Toggle staging for the entire file
-                if let Some(snapshot) = self.snapshots.get_mut(self.current_snapshot_index) {
-                    if let Some(file) = snapshot.files.get_mut(self.current_file_index) {
-                        // Check if any hunks are staged
-                        let any_staged = file.hunks.iter().any(|h| h.staged);
-
-                        if any_staged {
-                            // Unstage the file
-                            match self.git_repo.unstage_file(&file.path) {
-                                Ok(_) => {
-                                    // Mark all hunks as unstaged
-                                    for hunk in &mut file.hunks {
-                                        hunk.staged = false;
-                                        hunk.staged_line_indices.clear();
-                                    }
-                                    debug_log(format!("Unstaged file {}", file.path.display()));
-                                    refresh_needed = true;
-                                }
-                                Err(e) => {
-                                    debug_log(format!("Failed to unstage file: {}", e));
-                                }
-                            }
-                        } else {
-                            // Stage the file
-                            match self.git_repo.stage_file(&file.path) {
-                                Ok(_) => {
-                                    // Mark all hunks as staged
-                                    for hunk in &mut file.hunks {
-                                        hunk.staged = true;
-                                        // Mark all change lines as staged
-                                        hunk.staged_line_indices.clear();
-                                        for (idx, line) in hunk.lines.iter().enumerate() {
-                                            if (line.starts_with('+') && !line.starts_with("+++"))
-                                                || (line.starts_with('-')
-                                                    && !line.starts_with("---"))
-                                            {
-                                                hunk.staged_line_indices.insert(idx);
-                                            }
-                                        }
-                                    }
-                                    debug_log(format!("Staged file {}", file.path.display()));
-                                    refresh_needed = true;
-                                }
-                                Err(e) => {
-                                    debug_log(format!("Failed to stage file: {}", e));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            FocusPane::HelpSidebar => {
-                // No staging action for help sidebar
-            }
+        if self.focus == FocusPane::HelpSidebar {
+            return;
         }
-
-        if refresh_needed {
-            self.refresh_current_snapshot_from_git();
+        let Some(file) = self.current_file() else {
+            return;
+        };
+        let result = if self.focus == FocusPane::FileList
+            || matches!(file.status.as_str(), "Added" | "Deleted")
+            || file.hunks.is_empty()
+        {
+            Self::toggle_file_staging_for_change(&self.git_repo, file)
+        } else if let Some(hunk) = file.hunks.get(self.current_hunk_index) {
+            if self.line_selection_mode {
+                let Some(line) = hunk.lines.get(self.selected_line_index) else {
+                    return;
+                };
+                if !Self::is_diff_change_line(line) {
+                    return;
+                }
+                if hunk.staged_line_indices.contains(&self.selected_line_index) {
+                    self.git_repo
+                        .unstage_single_line(hunk, self.selected_line_index, &file.path)
+                } else {
+                    self.git_repo
+                        .stage_single_line(hunk, self.selected_line_index, &file.path)
+                }
+            } else {
+                self.git_repo
+                    .toggle_hunk_staging(hunk, &file.path)
+                    .map(|_| ())
+            }
+        } else {
+            return;
+        };
+        match result {
+            Ok(()) => {
+                self.status_message = None;
+                self.refresh_current_snapshot_from_git();
+            }
+            Err(error) => {
+                #[cfg(not(feature = "browser"))]
+                crate::logger::warn(format!("Staging failed: {error}"));
+                #[cfg(feature = "browser")]
+                debug_log(format!("Failed to stage selection: {error}"));
+                self.status_message = Some(format!("Staging failed: {error}"));
+                #[cfg(not(feature = "browser"))]
+                {
+                    self.status_message_time = Some(Instant::now());
+                }
+            }
         }
     }
 
