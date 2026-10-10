@@ -63,7 +63,9 @@ jobs:
       - name: Run smoke check
         run: |
           nix develop --accept-flake-config --command cargo run --locked -- --help
-          test "$(nix develop --accept-flake-config --command cargo run --locked -- --version)" = "hunky $(cat version.txt)"
+          nix develop --accept-flake-config --command bash <<'EOF'
+          test "$(cargo run --locked -- --version)" = "hunky $(cat version.txt)"
+          EOF
 
   benchmark:
     runs-on: ubuntu-latest
